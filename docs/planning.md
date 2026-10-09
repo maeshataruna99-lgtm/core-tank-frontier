@@ -41,6 +41,14 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
   Joystick kiri dinamis, sentuh kanan = aim + auto-fire, tombol DASH & SUARA,
   CSS responsif + viewport mobile. Verified: `?touchtest=1` 9/9 PASS.
   Desktop mouse/keyboard tidak berubah.
+- [x] Perbaikan mobile lanjutan — selesai (10 Okt 2026, commit 5c128e0)
+  Auto-targeting: turret otomatis membidik musuh terdekat (radius 48, termasuk
+  boss); aim manual jadi fallback saat tidak ada musuh. Dash jadi kemampuan
+  dasar semua pemain (sebelumnya terkunci di part Overdrive); Overdrive
+  di-rework jadi pengurang cooldown dash 6→4 dtk (Phase Drive tetap 3 dtk +
+  damage). Tombol fullscreen: LAYAR PENUH di menu + LAYAR di HUD touch.
+  Verified: logic test auto-aim 6/6 PASS (Node), syntax OK.
+  Catatan: dash baseline adalah perubahan desain (dulu eksklusif Overdrive).
 - [ ] Daily run / leaderboard (butuh backend — scope besar)
 
 ## Backlog (ide ditunda)
