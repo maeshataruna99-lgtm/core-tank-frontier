@@ -1716,7 +1716,7 @@ function hostOnClose(conn){
   else if(game.state === 'playing' || game.state === 'draft') showBanner(p.name + ' keluar', '');
 }
 function sendSnapshot(){
-  const msg = { t:'s', w:game.wave, st:game.state, p:[], e:[], k:[], sh:Net.shotQ.splice(0), boss:null };
+  const msg = { t:'s', w:game.wave, st:game.state, q:game.spawnQueue.length, p:[], e:[], k:[], sh:Net.shotQ.splice(0), boss:null };
   for(const p of players)
     msg.p.push([p.netId, r2(p.pos.x), r2(p.pos.z), r2(p.bodyYaw), r2(p.turretYaw),
       Math.ceil(p.hp), p.maxHp, p.alive?1:0, Math.ceil(p.shield), p.scrap, p.colorIdx]);
@@ -1915,7 +1915,7 @@ function onSnapshot(m){
     bw.classList.remove('hidden');
     document.getElementById('boss-fill').style.transform = `scaleX(${clamp(m.boss[0]/m.boss[1],0,1)})`;
   } else bw.classList.add('hidden');
-  document.getElementById('enemies-left').textContent = m.boss ? 'KALAHKAN DREADNOUGHT' : `sisa musuh: ${m.e.length}`;
+  document.getElementById('enemies-left').textContent = m.boss ? 'KALAHKAN DREADNOUGHT' : `sisa musuh: ${m.e.length + (m.q||0)}`;
   updateHUD();
 }
 function guestInterp(dt){
