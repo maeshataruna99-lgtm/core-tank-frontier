@@ -161,6 +161,7 @@ html, body { touch-action: none; overscroll-behavior: none; }
   border: 2px solid rgba(255,211,77,.55); }
 #btn-dash { right: 26px; bottom: 110px; }
 #btn-mute-touch { right: 26px; top: 76px; min-width: 52px; min-height: 52px; font-size: 13px; }
+#btn-fs-touch { right: 26px; top: 140px; min-width: 52px; min-height: 52px; font-size: 13px; }
 
 /* ---- Responsive HUD for narrow screens (phones) ---- */
 @media (max-width: 700px) {
@@ -237,6 +238,7 @@ html, body { touch-action: none; overscroll-behavior: none; }
 <div id="banner"><h1 id="banner-title"></h1><p id="banner-sub"></p></div>
 <button id="btn-dash" class="touch-only tc-btn">DASH</button>
 <button id="btn-mute-touch" class="touch-only tc-btn">SUARA</button>
+<button id="btn-fs-touch" class="touch-only tc-btn">LAYAR</button>
 
 // ---- JS: insert AFTER the anchor line (end of INPUT section) ----
 
@@ -245,9 +247,10 @@ html, body { touch-action: none; overscroll-behavior: none; }
   <h2>SURVIVAL 3D — seberapa jauh tankmu bertahan?</h2>
   <button class="btn" id="start-btn">MAIN SENDIRI</button>
   <button class="btn btn-multi" id="btn-multi">🧑‍🤝‍🧑 CO-OP MULTIPLAYER</button>
+  <button class="btn" id="btn-fullscreen">LAYAR PENUH</button>
   <div class="controls-hint">
     <b>WASD / Panah</b> — gerak &nbsp;·&nbsp; <b>Mouse</b> — arah turret<br>
-    <b>Klik tahan</b> — tembak &nbsp;·&nbsp; <b>Space</b> — dash (butuh part Overdrive)<br>
+    <b>Klik tahan</b> — tembak &nbsp;·&nbsp; <b>Space</b> — dash<br>
     Tiap wave selamat → pilih <b>1 dari 3 kartu part</b> → tank makin kuat, musuh makin brutal
   </div>
   <div id="meta-panel">
@@ -605,6 +608,13 @@ addEventListener('mousemove', e => {
 addEventListener('mousedown', e => { if(e.button===0) mouse.down = true; AudioSys.init(); });
 addEventListener('mouseup', e => { if(e.button===0) mouse.down = false; });
 addEventListener('contextmenu', e => e.preventDefault());
+// Fullscreen toggle — dipakai tombol menu (desktop) & tombol LAYAR (touch).
+function toggleFullscreen(){
+  try{
+    if(document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen();
+  }catch(e){ /* fullscreen tidak didukung / ditolak — abaikan */ }
+}
 function initTouchButtons(){
   if(typeof TouchUI === 'undefined') return; // agent 06 not applied — skip wiring
   const dashBtn = document.getElementById('btn-dash');
@@ -635,6 +645,15 @@ function initTouchButtons(){
     AudioSys.muted = !AudioSys.muted;
     setMuteLabel();
   }, { passive: false });
+
+  // FULLSCREEN: tap toggles fullscreen (handheld-friendly, works on desktop too)
+  const fsBtn = document.getElementById('btn-fs-touch');
+  if(fsBtn){
+    fsBtn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      toggleFullscreen();
+    }, { passive: false });
+  }
 }
 // NOTE: initTouchButtons() is NOT self-invoked here; the integrator (agent 10)
 // calls it once at boot alongside the other touch init functions.
@@ -834,7 +853,7 @@ const CARDS = [
   { id:'turbo', slot:'ENGINE', name:'Turbocharger', rarity:'common',
     desc:'+25% kecepatan gerak per level', max:3 },
   { id:'overdrive', slot:'ENGINE', name:'Overdrive', rarity:'epic',
-    desc:'SPACE = dash + kebal sesaat (cooldown 6 dtk)', max:1 },
+    desc:'Dash: cooldown 6→4 detik', max:1 },
   { id:'nanos', slot:'UTILITY', name:'Nanobot Swarm', rarity:'rare',
     desc:'Regenerasi +2.5 HP/detik per level', max:3 },
   { id:'aegis', slot:'UTILITY', name:'Aegis Shield', rarity:'epic',
@@ -1006,7 +1025,7 @@ function recomputeStats(p = player){
   p.regen = 2.5 * PL('nanos',p);
   p.maxShield = 40 * PL('aegis',p);
   p.negate = PL('reactive',p)>0 ? (.15 + .15*PL('reactive',p)) : 0; // .3/.45/.6
-  p.hasDash = PL('overdrive',p) > 0;
+  p.hasDash = true; // dash baseline untuk semua pemain (mobile & desktop)
   p.magnetMul = PL('greed',p)>0 ? 2 : 1;
   p.hp = Math.min(p.hp, p.maxHp);
   p.shield = Math.min(p.shield, p.maxShield);
@@ -1264,6 +1283,16 @@ function nearestPlayer(x, z){
     if(!p.alive) continue;
     const d2 = (p.pos.x-x)*(p.pos.x-x) + (p.pos.z-z)*(p.pos.z-z);
     if(d2 < bd){ bd = d2; best = p; }
+  }
+  return best;
+}
+// Musuh aktif terdekat (termasuk boss) dalam jarak maxD — untuk auto-aim mobile.
+function nearestEnemy(x, z, maxD = 48){
+  let best = null, bd = maxD*maxD;
+  for(const e of enemies){
+    if(!e.active) continue;
+    const d2 = (e.pos.x-x)*(e.pos.x-x) + (e.pos.z-z)*(e.pos.z-z);
+    if(d2 < bd){ bd = d2; best = e; }
   }
   return best;
 }
@@ -1655,8 +1684,12 @@ function resolveSpawnFromObstacles(x, z, r){
 }
 function readLocalInput(p){
   if(typeof TouchUI !== 'undefined' && TouchUI.active && TouchUI.visible){
+    // Auto-targeting (mobile): turret otomatis membidik musuh terdekat.
+    // Aim manual via sentuhan kanan dipakai saat tidak ada musuh dalam jarak.
+    const tgt = nearestEnemy(p.pos.x, p.pos.z, 48);
     return { ix: TouchUI.moveX, iz: TouchUI.moveZ,
-      ax: TouchUI.aimX || p.pos.x, az: TouchUI.aimZ || p.pos.z,
+      ax: tgt ? tgt.pos.x : (TouchUI.aimX || p.pos.x),
+      az: tgt ? tgt.pos.z : (TouchUI.aimZ || p.pos.z),
       fire: !!TouchUI.firing, dash: !!TouchUI.dash };
   }
   let ix = 0, iz = 0;
@@ -1679,7 +1712,7 @@ function simPlayer(p, inp, dt, auth){
   // dash
   p.dashCd -= dt;
   if(p.hasDash && inp.dash && p.dashCd <= 0 && wish.lengthSq() > 0){
-    p.dashCd = PL('phasedrive',p)>0 ? 3 : 6;
+    p.dashCd = PL('phasedrive',p)>0 ? 3 : (PL('overdrive',p)>0 ? 4 : 6);
     p.dashT = 0.22; p.invulnT = 0.3;
     p.dashDir = wish.clone();
     p.dashHit.clear();
@@ -2611,6 +2644,7 @@ buildPlayer(player);
 recomputeStats(player);
 renderUpgrades();
 requestAnimationFrame(frame);
+document.getElementById('btn-fullscreen').onclick = () => { AudioSys.init(); toggleFullscreen(); };
 document.getElementById('start-btn').onclick = () => {
   game.runSeed = (Math.random()*1e9)|0; // agent 05: deterministic obstacle layout seed
   AudioSys.init();
@@ -2851,6 +2885,28 @@ function runTouchTest(){
     fireTouch('touchend', [mkTouch(5, RX, RY)]);
     fireTouch('touchend', [mkTouch(4, LX + 70, LY)]);
     say(TouchUI.firing === false && TouchUI.moveX === 0, 'touches released -> firing=false, moveX=0');
+  });
+
+  // (e) auto-aim mobile: musuh terdekat -> ax/az mengarah ke musuh; tanpa musuh -> fallback aim manual
+  step('auto-aim', () => {
+    TouchUI.aimX = 0; TouchUI.aimZ = 0;
+    enemies.push({ active:true, pos:{ x: 12, z: -7 } });
+    const inpAim = readLocalInput(player);
+    say(inpAim.ax === 12 && inpAim.az === -7,
+      `auto-aim -> ax=${inpAim.ax}, az=${inpAim.az} (12, -7)`);
+    enemies.pop();
+    const inpNoE = readLocalInput(player);
+    say(inpNoE.ax === 0 && inpNoE.az === 0,
+      `tanpa musuh -> fallback ax=${inpNoE.ax}, az=${inpNoE.az} (0, 0)`);
+  });
+
+  // (f) dash baseline + tombol fullscreen
+  step('dash+fullscreen', () => {
+    recomputeStats(player);
+    say(player.hasDash === true, `hasDash=${player.hasDash} (true, tanpa Overdrive)`);
+    say(!!document.getElementById('btn-fullscreen') && !!document.getElementById('btn-fs-touch'),
+      'tombol fullscreen menu (#btn-fullscreen) & touch (#btn-fs-touch) ada');
+    say(typeof toggleFullscreen === 'function', 'toggleFullscreen callable');
   });
 
   TouchUI.active = prevActive;
