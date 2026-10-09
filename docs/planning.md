@@ -49,6 +49,14 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
   damage). Tombol fullscreen: LAYAR PENUH di menu + LAYAR di HUD touch.
   Verified: logic test auto-aim 6/6 PASS (Node), syntax OK.
   Catatan: dash baseline adalah perubahan desain (dulu eksklusif Overdrive).
+- [x] Stage intro "GENERATING WORLD" + bangunan destructible — selesai (10 Okt 2026, commit 183f9cdf2)
+  Tiap wave: overlay GENERATING WORLD + progress bar, bangunan jatuh dari langit
+  satu per satu (stagger deterministik, efek debu + bunyi thud + squash saat
+  mendarat, tank didorong keluar dari zona jatuh). Musuh/boss baru spawn setelah
+  semua bangunan mendarat. Bangunan bisa dihancurkan peluru pemain (HP
+  30+r*14) -> pecah jadi 10 puing dinamis (fisika jatuh-pantul-fade).
+  Sinkron host->guest via event 'obst'; guest menjalankan animasi intro lokal.
+  Verified: logic test 22/22 PASS (Node), syntax OK.
 - [ ] Daily run / leaderboard (butuh backend — scope besar)
 
 ## Backlog (ide ditunda)
