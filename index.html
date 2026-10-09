@@ -2042,11 +2042,13 @@ document.getElementById('btn-start-mp').onclick = startMPGame;
 // Deterministic loopback self-test: in-page host + virtual guest via real WebRTC.
 // URL: ?selftest=1&room=CODE — reports PASS/FAIL in #selftest div and document.title.
 function runSelfTest(){
-  const code = (urlRoom || 'SELFTEST').toUpperCase();
+  const qs = new URLSearchParams(location.search);
+  const code = (qs.get('room') || 'SELFTEST').toUpperCase();
+  const N = Math.min(3, Math.max(1, parseInt(qs.get('guests') || '1', 10) || 1));
   const out = [];
   const el = document.createElement('div');
   el.id = 'selftest';
-  el.style.cssText = 'position:fixed;top:10px;left:10px;z-index:9999;background:#000;color:#0f0;padding:12px;font:14px monospace;white-space:pre;max-width:90vw';
+  el.style.cssText = 'position:fixed;top:10px;left:10px;z-index:9999;background:#000;color:#0f0;padding:12px;font:14px monospace;white-space:pre;max-width:92vw;max-height:82vh;overflow:auto';
   document.body.appendChild(el);
   const render = () => {
     el.textContent = out.join('\n') || '(running…)';
@@ -2054,50 +2056,111 @@ function runSelfTest(){
       document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : 'SELFTEST: RUNNING';
   };
   const say = (ok, msg) => { out.push((ok ? 'PASS ' : 'FAIL ') + msg); render(); };
+  const finish = () => {
+    document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : 'SELFTEST: PASS';
+    render();
+  };
   render();
-  if(typeof Peer === 'undefined'){ say(false, 'PeerJS failed to load'); document.title = 'SELFTEST: FAIL'; return; }
+  if(typeof Peer === 'undefined'){ say(false, 'PeerJS failed to load'); finish(); return; }
   document.getElementById('net-name').value = 'Host';
   createRoom();
+  const guests = [];
+  const dirs = [{ix:1,iz:0},{ix:-1,iz:0},{ix:0,iz:1}];
+  let started = false;
   const waitHost = setInterval(() => {
     if(!(Net.mode === 'host' && Net.peer && Net.peer.open)) return;
     clearInterval(waitHost);
     say(true, 'host peer open, room ' + code);
-    const gp = new Peer({ debug: 0 });
-    gp.on('error', (e) => say(false, 'guest peer error: ' + e.type));
-    gp.on('open', () => {
-      const conn = gp.connect(peerIdFor(code), { reliable: true });
-      conn.on('open', () => {
-        conn.send({ t:'hello', name:'Guest', tact:0, scav:0 });
-        say(true, 'guest datachannel open (P2P loopback)');
-        const waitReg = setInterval(() => {
-          if(players.length < 2) return;
-          clearInterval(waitReg);
-          say(true, 'host registered guest player');
-          startMPGame();
-          const gst = players[1];
-          const x0 = gst.pos.x;
-          let sawShot = false;
-          const poll = setInterval(() => {
-            if(bullets.some(b => b.active && b.owner === gst)) sawShot = true;
-          }, 200);
-          const sendInp = setInterval(() => {
-            try{ conn.send({ t:'in', ix:1, iz:0, ax:gst.pos.x+10, az:gst.pos.z, fire:true, dash:false }); }catch(e){}
-          }, 50);
-          setTimeout(() => {
-            clearInterval(sendInp); clearInterval(poll);
-            say(gst.netInp && gst.netInp.ix === 1, 'host received guest input (netInp.ix===1)');
-            say(gst.pos.x - x0 > 2, `guest tank moved by host sim (dx=${(gst.pos.x-x0).toFixed(1)})`);
-            say(sawShot, 'guest bullets spawned by host sim');
-            document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : 'SELFTEST: PASS';
-            render();
-          }, 3500);
-        }, 300);
+    for(let g = 0; g < N; g++){
+      const G = { name:'Guest'+(g+1), dir:dirs[g % dirs.length], gp:null, conn:null, p:null, p0:null, sawShot:false, gotParts:false };
+      guests.push(G);
+      const gp = new Peer({ debug: 0 });
+      G.gp = gp;
+      gp.on('error', (e) => say(false, G.name + ' peer error: ' + e.type));
+      gp.on('open', () => {
+        const conn = gp.connect(peerIdFor(code), { reliable: true });
+        G.conn = conn;
+        conn.on('data', (m) => {
+          if(!m || typeof m.t !== 'string') return;
+          if((m.t === 'draft' || m.t === 'evo') && m.choices && m.choices.length){
+            try{ conn.send({ t: m.t === 'evo' ? 'pickEvo' : 'pick', id: m.choices[0].id }); }catch(e){}
+          }
+          if(m.t === 'ev' && m.k === 'parts') G.gotParts = true;
+        });
+        conn.on('open', () => {
+          conn.send({ t:'hello', name:G.name, tact:0, scav:0 });
+          say(true, G.name + ' datachannel open (P2P loopback)');
+          if(!started && guests.every(x => x.conn)){ started = true; startWhenReady(); }
+        });
       });
-    });
+    }
   }, 300);
+
+  function startWhenReady(){
+    const waitReg = setInterval(() => {
+      if(players.length < N + 1) return;
+      clearInterval(waitReg);
+      say(true, `host registered ${N} guest(s); total players ${players.length}`);
+      const liCount = document.querySelectorAll('#lobby-players li').length;
+      say(liCount === N + 1, `lobby shows ${N+1} players (found ${liCount})`);
+      startMPGame();
+      say(true, `game started, wave ${game.wave}`);
+      guests.forEach(G => {
+        G.p = players.find(x => x.name === G.name);
+        G.p0 = { x: G.p.pos.x, z: G.p.pos.z };
+      });
+      const poll = setInterval(() => {
+        guests.forEach(G => { if(bullets.some(b => b.active && b.owner === G.p)) G.sawShot = true; });
+      }, 200);
+      const sendInp = setInterval(() => {
+        guests.forEach(G => {
+          try{ G.conn.send({ t:'in', ix:G.dir.ix, iz:G.dir.iz, ax:G.p.pos.x + G.dir.ix*10, az:G.p.pos.z + G.dir.iz*10, fire:true, dash:false }); }catch(e){}
+        });
+      }, 50);
+      setTimeout(() => {
+        clearInterval(sendInp); clearInterval(poll);
+        guests.forEach(G => {
+          const p = G.p;
+          say(!!(p.netInp && p.netInp.ix === G.dir.ix && p.netInp.iz === G.dir.iz), `${G.name}: host received scripted input`);
+          const moved = Math.hypot(p.pos.x - G.p0.x, p.pos.z - G.p0.z);
+          say(moved > 2, `${G.name}: moved by host sim (d=${moved.toFixed(1)})`);
+          say(G.sawShot, `${G.name}: bullets spawned by host sim`);
+        });
+        // kill guest 2 (if present), then run the real draft orchestration
+        let victim = null, victimName = '';
+        if(guests.length > 1){
+          victim = guests[1].p; victimName = guests[1].name;
+          victim.invulnT = 0;
+          damagePlayer(99999, victim);
+          say(!victim.alive, `${victimName}: killed (alive=false)`);
+        }
+        const w0 = game.wave;
+        hostBeginDraft();
+        say(true, 'hostBeginDraft: draft offers sent to all players');
+        const hd = Net.pending && Net.pending.find(d => d.p.isLocal);
+        if(hd) hostPick(hd.p, hd.choices.length ? hd.choices[0].id : null);
+        const waitWave = setInterval(() => {
+          if(game.wave <= w0) return;
+          clearInterval(waitWave);
+          say(true, `draft complete, wave advanced to ${game.wave}`);
+          guests.forEach(G => {
+            say(G.gotParts, `${G.name}: received parts sync`);
+            say(Object.keys(G.p.parts).length > 0, `${G.name}: part applied (${Object.keys(G.p.parts).join(',') || 'none'})`);
+          });
+          if(victim) say(victim.alive && victim.hp > 0, `${victimName}: respawned with ${victim.hp} HP`);
+          finish();
+        }, 400);
+        setTimeout(() => {
+          if(document.title !== 'SELFTEST: PASS' && document.title !== 'SELFTEST: FAIL'){
+            say(false, 'timeout waiting for draft completion'); finish();
+          }
+        }, 15000);
+      }, 3500);
+    }, 300);
+  }
   setTimeout(() => {
-    if(!out.some(l => l.startsWith('PASS'))){ say(false, 'timeout waiting for host peer'); document.title = 'SELFTEST: FAIL'; }
-  }, 25000);
+    if(!out.some(l => l.startsWith('PASS '))){ say(false, 'timeout waiting for host peer'); finish(); }
+  }, 30000);
 }
 if(new URLSearchParams(location.search).get('selftest')) setTimeout(runSelfTest, 1500);
 </script>
