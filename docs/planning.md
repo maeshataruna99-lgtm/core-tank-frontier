@@ -32,8 +32,15 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
     draft per pemain tersinkron (tiap guest dapat part berbeda), kill → respawn wave 2 dengan 50% HP (70 HP terukur).
   - By design: host keluar → room bubar (belum ada host migration).
   - Perbaikan dari hasil uji: spawn protection 2 dtk tiap mulai wave; counter "sisa musuh" guest kini termasuk antrian spawn.
-- [ ] Varian arena & obstacle
-- [ ] Kontrol touch untuk mobile
+- [x] Varian arena & obstacle — selesai (10 agen, 10 Okt 2026)
+  5 tema arena (Reruntuhan Baja, Gurun Senja, Kutub Es, Rawa Neon, Kawah Vulkanik;
+  ganti tiap 2 wave, boss wave 10 selalu Kawah Vulkanik), obstacle circle-collider
+  deterministik (mulberry32 + runSeed, 5 gaya layout, sinkron host→guest),
+  spawn aman & hindari spawn player. Verified: selftest 12/12 PASS (tanpa regresi co-op).
+- [x] Kontrol touch untuk mobile — selesai (10 agen, 10 Okt 2026)
+  Joystick kiri dinamis, sentuh kanan = aim + auto-fire, tombol DASH & SUARA,
+  CSS responsif + viewport mobile. Verified: `?touchtest=1` 9/9 PASS.
+  Desktop mouse/keyboard tidak berubah.
 - [ ] Daily run / leaderboard (butuh backend — scope besar)
 
 ## Backlog (ide ditunda)
