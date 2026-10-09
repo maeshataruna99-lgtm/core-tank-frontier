@@ -28,8 +28,8 @@ engine, utility). Die, and the run ends — how far can you get?
 
 - **Waves 1–9:** survive, clear all enemies, then draft a part card.
 - **Wave 10:** boss fight — Dreadnought with 3 attack patterns.
-- **Cards:** 12 parts across 6 slots, rarities Common → Epic.
-  Duplicates stack up to Lv 3. Reroll available for 15 scrap.
+- **Cards:** 17 parts across 6 slots, rarities Common → Legendary.
+  Duplicates stack up to Lv 3 (Legendaries are unique). Reroll available.
 - **Pickups:** scrap (currency) and repair kits drop from enemies.
 
 ## Project layout

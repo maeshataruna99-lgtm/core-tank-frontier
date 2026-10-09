@@ -80,6 +80,9 @@
   .card.common { border-color: #9aa4b5; } .card.common .rarity { color: #9aa4b5; }
   .card.rare { border-color: #4d9fff; } .card.rare .rarity { color: #4d9fff; }
   .card.epic { border-color: #c26bff; } .card.epic .rarity { color: #c26bff; }
+  .card.legendary { border-color: #ff9f2e; box-shadow: 0 0 22px rgba(255,159,46,.35); }
+  .card.legendary .rarity { color: #ff9f2e; }
+  .card.legendary:hover { box-shadow: 0 0 34px rgba(255,159,46,.55); }
   #reroll-btn { margin-top: 26px; background: #1d2536; color: #ffd34d;
     border: 1px solid #ffd34d; padding: 10px 30px; font-size: 15px; border-radius: 8px;
     cursor: pointer; pointer-events: auto; }
@@ -362,9 +365,19 @@ const CARDS = [
     desc:'Regenerasi +2.5 HP/detik per level', max:3 },
   { id:'aegis', slot:'UTILITY', name:'Aegis Shield', rarity:'epic',
     desc:'Perisai 40 yang menyerap damage, isi ulang otomatis', max:2 },
+  { id:'phoenix', slot:'HULL', name:'Phoenix Core', rarity:'legendary',
+    desc:'Sekali per run: selamat dari kematian dengan 50% HP + ledakan dahsyat', max:1 },
+  { id:'juggernaut', slot:'TRACKS', name:'Juggernaut', rarity:'legendary',
+    desc:'Menabrak musuh memberi 150% damage ke mereka', max:1 },
+  { id:'sunfall', slot:'CANNON', name:'Sunfall Rounds', rarity:'legendary',
+    desc:'Setiap kill MELEDAK: AoE 40% damage ke musuh sekitar', max:1 },
+  { id:'phasedrive', slot:'ENGINE', name:'Phase Drive', rarity:'legendary',
+    desc:'Dash memberi damage ke yang dilewati + cooldown 3 detik', max:1 },
+  { id:'greed', slot:'UTILITY', name:'Greed Core', rarity:'legendary',
+    desc:'Scrap drop 2x lipat & radius magnet 2x', max:1 },
 ];
-const RARITY_W = { common: 46, rare: 32, epic: 22 };
-const RARITY_LABEL = { common:'COMMON', rare:'RARE', epic:'EPIC' };
+const RARITY_W = { common: 44, rare: 30, epic: 18, legendary: 8 };
+const RARITY_LABEL = { common:'COMMON', rare:'RARE', epic:'EPIC', legendary:'LEGENDARY' };
 
 /* ================= META PROGRESSION (localStorage) ================= */
 const META_KEY = 'core_tank_frontier_meta_v1';
@@ -422,7 +435,7 @@ const player = {
   projectiles: 1, pierce: 0, pelletMul: 1, scatterOn: false,
   negate: 0, regen: 0, hasDash: false,
   fireT: 0, dashCd: 0, dashT: 0, invulnT: 0, hitT: 0,
-  parts: {}, alive: true, kills: 0,
+  parts: {}, alive: true, kills: 0, phoenixUsed: false, magnetMul: 1, dashHit: new Set(),
 };
 function buildPlayer(){
   player.mesh = buildTankMesh();
@@ -452,6 +465,7 @@ function recomputeStats(){
   player.maxShield = 40 * PL('aegis');
   player.negate = PL('reactive')>0 ? (.15 + .15*PL('reactive')) : 0; // .3/.45/.6
   player.hasDash = PL('overdrive') > 0;
+  player.magnetMul = PL('greed')>0 ? 2 : 1;
   player.hp = Math.min(player.hp, player.maxHp);
   player.shield = Math.min(player.shield, player.maxShield);
   // dual mount visual: second barrel
@@ -485,7 +499,23 @@ function damagePlayer(dmg){
   player.hp -= dmg;
   player.hitT = 0.18; addShake(0.55); AudioSys.hit();
   flashTank();
-  if(player.hp <= 0){ player.hp = 0; player.alive = false; onPlayerDeath(); }
+  if(player.hp <= 0){
+    if(PL('phoenix')>0 && !player.phoenixUsed){
+      player.phoenixUsed = true;
+      player.hp = Math.round(player.maxHp*0.5);
+      player.invulnT = 2.5;
+      addShake(1.4); AudioSys.boom();
+      burst(player.pos.x, player.pos.z, 0xff9f2e, 40, 16);
+      spawnFloatText('PHOENIX REBORN!');
+      for(const e of enemies){
+        if(!e.active) continue;
+        const dx = e.pos.x-player.pos.x, dz = e.pos.z-player.pos.z;
+        if(dx*dx+dz*dz < 64) damageEnemy(e, player.damage*2);
+      }
+      return;
+    }
+    player.hp = 0; player.alive = false; onPlayerDeath();
+  }
 }
 function flashTank(){
   player.mesh.userData.bodyMat.emissive = new THREE.Color(0xff2222);
@@ -613,7 +643,8 @@ function updatePickups(dt){
     p.mesh.position.y = 0.6 + Math.sin(p.t*4)*0.15;
     const dx = player.pos.x - p.mesh.position.x, dz = player.pos.z - p.mesh.position.z;
     const d2 = dx*dx + dz*dz;
-    if(d2 < CFG.magnetRadius*CFG.magnetRadius && player.alive){
+    const mr = CFG.magnetRadius*player.magnetMul;
+    if(d2 < mr*mr && player.alive){
       const d = Math.sqrt(d2)||1, pull = 26*dt;
       p.mesh.position.x += dx/d*pull; p.mesh.position.z += dz/d*pull;
     }
@@ -664,8 +695,16 @@ function damageEnemy(e, dmg){
     burst(e.pos.x, e.pos.z, 0xff7733, 14, 10);
     burst(e.pos.x, e.pos.z, 0x555555, 8, 6);
     AudioSys.boom(); addShake(0.25);
+    if(PL('sunfall')>0){
+      burst(e.pos.x, e.pos.z, 0xffd34d, 20, 13);
+      for(const o of enemies){
+        if(!o.active || o === e) continue;
+        const dx = o.pos.x-e.pos.x, dz = o.pos.z-e.pos.z;
+        if(dx*dx+dz*dz < 36) damageEnemy(o, player.damage*0.4);
+      }
+    }
     const tinfo = ENEMY_TYPES[e.type];
-    const nScrap = tinfo ? tinfo.scrap : 10;
+    const nScrap = (tinfo ? tinfo.scrap : 10) * (PL('greed')>0 ? 2 : 1);
     for(let i=0;i<nScrap;i++)
       spawnPickup(e.pos.x + rand(-1.5,1.5), e.pos.z + rand(-1.5,1.5), 'scrap');
     if(Math.random() < 0.07) spawnPickup(e.pos.x, e.pos.z, 'repair');
@@ -709,6 +748,7 @@ function updateEnemies(dt){
     if(d < e.r + 1.3 && e.contactT <= 0 && player.alive){
       e.contactT = 0.9;
       damagePlayer(e.dmg);
+      if(PL('juggernaut')>0) damageEnemy(e, player.damage*1.5);
       const nx = dx/d, nz = dz/d;
       e.pos.x -= nx*1.2; e.pos.z -= nz*1.2;
     }
@@ -781,6 +821,7 @@ function updateBoss(e, dt){
   e.contactT -= dt;
   if(d < e.r + 1.3 && e.contactT <= 0 && player.alive){
     e.contactT = 1.0; damagePlayer(e.dmg);
+    if(PL('juggernaut')>0) damageEnemy(e, player.damage*1.5);
   }
   if(e.flashT > 0){ e.flashT -= dt;
     if(e.flashT <= 0) e.mesh.userData.bodyMat.emissive = new THREE.Color(0x000000); }
@@ -819,13 +860,26 @@ function updatePlayer(dt){
   // dash
   player.dashCd -= dt;
   if(player.hasDash && keys['Space'] && player.dashCd <= 0 && wish.lengthSq() > 0){
-    player.dashCd = 6; player.dashT = 0.22; player.invulnT = 0.3;
+    player.dashCd = PL('phasedrive')>0 ? 3 : 6;
+    player.dashT = 0.22; player.invulnT = 0.3;
     player.dashDir = wish.clone();
+    player.dashHit.clear();
     AudioSys.dash(); burst(player.pos.x, player.pos.z, 0x5ac8ff, 8, 6);
   }
   let spd = player.speed;
   if(player.dashT > 0){ player.dashT -= dt; spd *= 3.4;
     player.vel.copy(player.dashDir).multiplyScalar(spd);
+    if(PL('phasedrive')>0){
+      for(const e of enemies){
+        if(!e.active || player.dashHit.has(e)) continue;
+        const dx = e.pos.x-player.pos.x, dz = e.pos.z-player.pos.z;
+        if(dx*dx+dz*dz < 7.3){
+          player.dashHit.add(e);
+          damageEnemy(e, player.damage*1.2);
+          burst(e.pos.x, e.pos.z, 0x5ac8ff, 8, 8);
+        }
+      }
+    }
   } else {
     player.vel.lerp(wish.clone().multiplyScalar(spd), 1 - Math.pow(0.0001, dt));
   }
