@@ -1,5 +1,7 @@
 # Core Tank Frontier
 
+🎮 **Play now: https://core-tank-frontier.vercel.app/**
+
 Roguelike survival tank 3D — browser game built with Three.js.
 
 Survive endless waves of enemies in an isometric arena. After each wave,

@@ -16,9 +16,8 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 - [x] Juice: floating damage numbers (pooled HTML), low-HP vignette pulse
 - [ ] Rapikan menu utama & layar game over/victory (opsional, nanti)
 
-## Fase 3 — Deploy ke Vercel
-- [ ] Bersihkan folder deploy (pisahkan breakdown.md)
-- [ ] Deploy via dashboard / CLI, dapat URL publik
+## Fase 3 — Deploy ke Vercel (selesai 9 Okt 2026)
+- [x] Deploy via dashboard, dapat URL publik: https://core-tank-frontier.vercel.app/
 - [ ] Test URL di desktop & HP (ekspektasi: desktop optimal)
 
 ## Fase 4 — Stretch (opsional, pilih sesuai tujuan)
