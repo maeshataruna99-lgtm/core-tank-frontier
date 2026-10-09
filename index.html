@@ -1283,8 +1283,11 @@ function startWave(n){
     players.forEach((p, i) => {
       const s = spots[i % spots.length];
       p.pos.set(s[0], 0, s[1]); p.vel.set(0,0,0);
+      p.invulnT = Math.max(p.invulnT, 2); // spawn protection
       if(!p.alive){ p.alive = true; p.hp = Math.ceil(p.maxHp*0.5); p.mesh.visible = true; }
     });
+  } else {
+    player.invulnT = Math.max(player.invulnT, 2); // spawn protection
   }
   if(n >= CFG.maxWaves){
     spawnBoss(n);
@@ -2036,6 +2039,66 @@ document.getElementById('btn-create').onclick = createRoom;
 document.getElementById('btn-join').onclick = joinRoom;
 document.getElementById('btn-leave').onclick = () => location.reload();
 document.getElementById('btn-start-mp').onclick = startMPGame;
+// Deterministic loopback self-test: in-page host + virtual guest via real WebRTC.
+// URL: ?selftest=1&room=CODE — reports PASS/FAIL in #selftest div and document.title.
+function runSelfTest(){
+  const code = (urlRoom || 'SELFTEST').toUpperCase();
+  const out = [];
+  const el = document.createElement('div');
+  el.id = 'selftest';
+  el.style.cssText = 'position:fixed;top:10px;left:10px;z-index:9999;background:#000;color:#0f0;padding:12px;font:14px monospace;white-space:pre;max-width:90vw';
+  document.body.appendChild(el);
+  const render = () => {
+    el.textContent = out.join('\n') || '(running…)';
+    document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : (out.some(l => l.startsWith('PASS')) ? 'SELFTEST: RUNNING' : 'SELFTEST: RUNNING');
+  };
+  const say = (ok, msg) => { out.push((ok ? 'PASS ' : 'FAIL ') + msg); render(); };
+  render();
+  if(typeof Peer === 'undefined'){ say(false, 'PeerJS failed to load'); document.title = 'SELFTEST: FAIL'; return; }
+  document.getElementById('net-name').value = 'Host';
+  createRoom();
+  const waitHost = setInterval(() => {
+    if(!(Net.mode === 'host' && Net.peer && Net.peer.open)) return;
+    clearInterval(waitHost);
+    say(true, 'host peer open, room ' + code);
+    const gp = new Peer({ debug: 0 });
+    gp.on('error', (e) => say(false, 'guest peer error: ' + e.type));
+    gp.on('open', () => {
+      const conn = gp.connect(peerIdFor(code), { reliable: true });
+      conn.on('open', () => {
+        conn.send({ t:'hello', name:'Guest', tact:0, scav:0 });
+        say(true, 'guest datachannel open (P2P loopback)');
+        const waitReg = setInterval(() => {
+          if(players.length < 2) return;
+          clearInterval(waitReg);
+          say(true, 'host registered guest player');
+          startMPGame();
+          const gst = players[1];
+          const x0 = gst.pos.x;
+          let sawShot = false;
+          const poll = setInterval(() => {
+            if(bullets.some(b => b.active && b.owner === gst)) sawShot = true;
+          }, 200);
+          const sendInp = setInterval(() => {
+            try{ conn.send({ t:'in', ix:1, iz:0, ax:gst.pos.x+10, az:gst.pos.z, fire:true, dash:false }); }catch(e){}
+          }, 50);
+          setTimeout(() => {
+            clearInterval(sendInp); clearInterval(poll);
+            say(gst.netInp && gst.netInp.ix === 1, 'host received guest input (netInp.ix===1)');
+            say(gst.pos.x - x0 > 2, `guest tank moved by host sim (dx=${(gst.pos.x-x0).toFixed(1)})`);
+            say(sawShot, 'guest bullets spawned by host sim');
+            document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : 'SELFTEST: PASS';
+            render();
+          }, 3500);
+        }, 300);
+      });
+    });
+  }, 300);
+  setTimeout(() => {
+    if(!out.some(l => l.startsWith('PASS'))){ say(false, 'timeout waiting for host peer'); document.title = 'SELFTEST: FAIL'; }
+  }, 25000);
+}
+if(new URLSearchParams(location.search).get('selftest')) setTimeout(runSelfTest, 1500);
 </script>
 </body>
 </html>
