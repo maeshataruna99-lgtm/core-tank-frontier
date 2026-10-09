@@ -716,8 +716,6 @@ function initTouchAim(){
 // so no per-run reset is needed in this section.
 
 function initTouchUI(){
-  if(!isTouchDevice()) return;
-  TouchUI.active = true;
   const JOY_R = 60; // px: stick radius mapping to full deflection; base is 2*JOY_R wide
   const joy = document.createElement('div');
   joy.id = 'touch-joy';
@@ -768,6 +766,9 @@ function initTouchUI(){
   }, { passive: false });
   document.addEventListener('touchend', onEnd, { passive: true });
   document.addEventListener('touchcancel', onEnd, { passive: true });
+  // Listeners registered on all devices (guarded by TouchUI.active at runtime);
+  // only real touch devices auto-enable. Tests may force TouchUI.active = true.
+  if(isTouchDevice()) TouchUI.active = true;
 }
 // Screen-relative move basis (camera looks along -(1,1.35,1))
 const MOVE_UP = V3(-1,0,-1).normalize();    // W
