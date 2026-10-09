@@ -25,6 +25,12 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 - [x] Kartu Legendary dengan efek unik (5 kartu: Phoenix, Juggernaut, Sunfall, Phase Drive, Greed) — selesai 9 Okt 2026
 - [x] Sistem Evolusi — draft evolusi unik di wave 3/6/9, boleh kumpulkan beberapa varian (6 evolusi: Vampiric, Chrono, Glass Cannon, Titan, EMP, Adrenaline) — selesai 9 Okt 2026
 - [x] Multiplayer co-op 2–4 pemain (P2P WebRTC via PeerJS, host-authoritative; room code; difficulty auto-scale by player count) — selesai 9 Okt 2026
+  - E2E verified 9 Okt 2026 (live, 2 browser sessions + deterministic loopback selftest `?selftest=1`):
+    lobby/kode room, guest join P2P, snapshot host→guest (tank+musuh+HUD), input guest→host (gerak dx>2 & tembak ter-spawn),
+    damage host→guest, auto-scale difficulty (12 musuh wave 1 untuk 2 pemain), overlay "menunggu wave berikutnya" saat guest mati.
+  - Belum diuji live: draft per pemain di MP, respawn wave berikutnya (keduanya code-reviewed, logic sound).
+  - By design: host keluar → room bubar (belum ada host migration).
+  - Perbaikan dari hasil uji: spawn protection 2 dtk tiap mulai wave; counter "sisa musuh" guest kini termasuk antrian spawn.
 - [ ] Varian arena & obstacle
 - [ ] Kontrol touch untuk mobile
 - [ ] Daily run / leaderboard (butuh backend — scope besar)
