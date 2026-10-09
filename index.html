@@ -2050,7 +2050,8 @@ function runSelfTest(){
   document.body.appendChild(el);
   const render = () => {
     el.textContent = out.join('\n') || '(running…)';
-    document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : (out.some(l => l.startsWith('PASS')) ? 'SELFTEST: RUNNING' : 'SELFTEST: RUNNING');
+    if(document.title !== 'SELFTEST: PASS' && document.title !== 'SELFTEST: FAIL')
+      document.title = out.some(l => l.startsWith('FAIL')) ? 'SELFTEST: FAIL' : 'SELFTEST: RUNNING';
   };
   const say = (ok, msg) => { out.push((ok ? 'PASS ' : 'FAIL ') + msg); render(); };
   render();
