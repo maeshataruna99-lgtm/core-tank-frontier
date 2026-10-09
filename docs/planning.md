@@ -24,9 +24,14 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 - [x] Meta progression + localStorage (upgrade permanen antar-run) — selesai 9 Okt 2026
 - [x] Kartu Legendary dengan efek unik (5 kartu: Phoenix, Juggernaut, Sunfall, Phase Drive, Greed) — selesai 9 Okt 2026
 - [x] Sistem Evolusi — draft evolusi unik di wave 3/6/9, boleh kumpulkan beberapa varian (6 evolusi: Vampiric, Chrono, Glass Cannon, Titan, EMP, Adrenaline) — selesai 9 Okt 2026
+- [x] Multiplayer co-op 2–4 pemain (P2P WebRTC via PeerJS, host-authoritative; room code; difficulty auto-scale by player count) — selesai 9 Okt 2026
 - [ ] Varian arena & obstacle
 - [ ] Kontrol touch untuk mobile
 - [ ] Daily run / leaderboard (butuh backend — scope besar)
+
+## Backlog (ide ditunda)
+- [ ] Visual evolution system — tiap part/evolusi mengubah tampilan tank
+  (laras AP panjang, scatter lebar, knalpot menyala, pelat armor, Titan membesar, dll.)
 
 ## Status (9 Okt 2026)
 - MVP prototipe selesai (`index.html`) — sudah cek sintaks + review logika, belum playtest visual.

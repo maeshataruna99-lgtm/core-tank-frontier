@@ -32,6 +32,11 @@ engine, utility). Die, and the run ends — how far can you get?
   Duplicates stack up to Lv 3 (Legendaries are unique). Reroll available.
 - **Evolutions:** draft 1 dari 3 evolusi UNIK tiap wave 3/6/9 (boleh kumpulkan
   beberapa varian, masing-masing cuma bisa diambil sekali).
+- **Multiplayer:** co-op 2–4 pemain via browser (P2P WebRTC, tanpa server).
+  Satu pemain buat room (jadi host), yang lain gabung pakai kode room.
+  Tiap pemain draft kartu & evolusi sendiri-sendiri; difficulty (HP/jumlah
+  musuh) otomatis menyesuaikan jumlah pemain; pemain yang gugur respawn
+  di wave berikutnya.
 - **Pickups:** scrap (currency) and repair kits drop from enemies.
 
 ## Project layout
