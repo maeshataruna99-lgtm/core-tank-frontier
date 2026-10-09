@@ -1,15 +1,18 @@
 # PLANNING — Rogue Tank Survival 3D
 
-Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
+Disusun 9 Okt 2026, diperbarui 10 Okt 2026.
+Status: **live** di https://core-tank-frontier.vercel.app/ — fitur stretch hampir selesai.
 
 ## Tujuan (diputuskan 9 Okt 2026)
-**(B) Game penuh** — MVP + polish + deploy + stretch goals.
+**(B) Game penuh** — MVP + polish + deploy + stretch goals. ✅ diputuskan & dikerjakan.
 
 ## Fase 1 — Verifikasi MVP
-- [ ] Playtest penuh: main dari wave 1 sampai 10 / game over
+- [ ] Playtest penuh oleh manusia: main dari wave 1 sampai 10 / game over (belum pernah)
 - [ ] Catat bug & rasa main (terlalu gampang/susah? kartu membingungkan?)
 - [ ] Fix bug yang ditemukan
 - [ ] Tuning dasar difficulty wave 1–3
+- Catatan: verifikasi otomatis sudah ekstensif (selftest multiplayer 26/26,
+  touchtest 9/9, logic test 22/22) — tapi belum ada playtest manusia penuh.
 
 ## Fase 2 — Polish (dikerjakan 9 Okt 2026)
 - [x] Balance: wave budget dilunakkan (4 + n*2.5), boss HP 900 → 750, bullet speed 30 → 34
@@ -18,7 +21,8 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 
 ## Fase 3 — Deploy ke Vercel (selesai 9 Okt 2026)
 - [x] Deploy via dashboard, dapat URL publik: https://core-tank-frontier.vercel.app/
-- [ ] Test URL di desktop & HP (ekspektasi: desktop optimal)
+- [x] Test di desktop (otomatis via browser, 9–10 Okt 2026)
+- [ ] Test di HP fisik (kontrol touch & auto-aim belum diuji tangan langsung)
 
 ## Fase 4 — Stretch (diputuskan: kerjakan berurutan)
 - [x] Meta progression + localStorage (upgrade permanen antar-run) — selesai 9 Okt 2026
@@ -63,11 +67,16 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 - [ ] Visual evolution system — tiap part/evolusi mengubah tampilan tank
   (laras AP panjang, scatter lebar, knalpot menyala, pelat armor, Titan membesar, dll.)
 
-## Status (9 Okt 2026)
-- MVP prototipe selesai (`index.html`) — sudah cek sintaks + review logika, belum playtest visual.
-- Planning disetujui sampai Fase 3; Fase 4 (stretch) ditunda — diputuskan nanti.
-- Berikutnya saat lanjut: playtest MVP → bugfix → polish → deploy Vercel.
+## Status (10 Okt 2026)
+- Game live di Vercel, semua stretch selesai kecuali Daily run/leaderboard.
+- Head commit: `183f9cdf2` (stage intro + destructible buildings).
+- Yang belum: playtest manusia penuh wave 1–10, tuning difficulty dari data,
+  rapikan menu/game-over/victory, test HP fisik, visual evolution system,
+  daily run/leaderboard (butuh backend), host migration (opsional).
+- Rekomendasi berikutnya: playtest penuh → tuning → polish menu.
 
-## Keputusan yang dibutuhkan
-1. **Tujuan akhir**: (A) demo playable buat portofolio, atau (B) game penuh?
-2. Item stretch mana yang prioritas (jika B)?
+## Keputusan (semua sudah diputuskan)
+1. ~~Tujuan akhir: (A) demo / (B) game penuh?~~ → **(B)**, 9 Okt 2026.
+2. ~~Item stretch mana yang prioritas?~~ → Berurutan: meta → legendary →
+   evolusi → multiplayer → arena → touch → stage intro. Daily run/leaderboard
+   terakhir (butuh backend).
