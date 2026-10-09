@@ -20,8 +20,8 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 - [x] Deploy via dashboard, dapat URL publik: https://core-tank-frontier.vercel.app/
 - [ ] Test URL di desktop & HP (ekspektasi: desktop optimal)
 
-## Fase 4 — Stretch (opsional, pilih sesuai tujuan)
-- [ ] Meta progression + localStorage (upgrade permanen antar-run)
+## Fase 4 — Stretch (diputuskan: kerjakan berurutan)
+- [x] Meta progression + localStorage (upgrade permanen antar-run) — selesai 9 Okt 2026
 - [ ] Kartu Legendary dengan efek unik
 - [ ] Varian arena & obstacle
 - [ ] Kontrol touch untuk mobile

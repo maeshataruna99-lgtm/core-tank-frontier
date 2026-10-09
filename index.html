@@ -89,6 +89,20 @@
   #end.lose h1 { color: #e5484d; } #end.win h1 { color: #37d67a; }
   #end .stats { margin: 24px 0 30px; color: #c9d1e0; font-size: 17px; line-height: 2; }
   #end .stats b { color: #ffd34d; }
+  /* Meta progression panel */
+  #menu { overflow-y: auto; }
+  #meta-panel { margin-top: 22px; width: 470px; max-width: 92vw; background: rgba(0,0,0,.45);
+    border: 1px solid #2a3348; border-radius: 12px; padding: 14px 20px 16px; }
+  #meta-bank { font-size: 16px; color: #ffd34d; margin-bottom: 6px; text-align: center; }
+  #meta-title { text-align: center; font-size: 12px; letter-spacing: 3px; color: #8b93a7;
+    margin-bottom: 4px; }
+  .upg { display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 8px 0; border-top: 1px solid #222b40; font-size: 14px; text-align: left; }
+  .upg-desc { color: #8b93a7; font-size: 12px; }
+  .upg-lvl { color: #ffd34d; letter-spacing: 2px; font-size: 12px; }
+  .upg button { background: #1d2536; color: #ffd34d; border: 1px solid #ffd34d;
+    border-radius: 6px; padding: 6px 14px; cursor: pointer; font-size: 13px; white-space: nowrap; }
+  .upg button:disabled { opacity: .35; cursor: default; }
 </style>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
@@ -123,6 +137,11 @@
     <b>WASD / Panah</b> — gerak &nbsp;·&nbsp; <b>Mouse</b> — arah turret<br>
     <b>Klik tahan</b> — tembak &nbsp;·&nbsp; <b>Space</b> — dash (butuh part Overdrive)<br>
     Tiap wave selamat → pilih <b>1 dari 3 kartu part</b> → tank makin kuat, musuh makin brutal
+  </div>
+  <div id="meta-panel">
+    <div id="meta-title">UPGRADE PERMANEN</div>
+    <div id="meta-bank"></div>
+    <div id="upgrades"></div>
   </div>
 </div>
 
@@ -347,6 +366,51 @@ const CARDS = [
 const RARITY_W = { common: 46, rare: 32, epic: 22 };
 const RARITY_LABEL = { common:'COMMON', rare:'RARE', epic:'EPIC' };
 
+/* ================= META PROGRESSION (localStorage) ================= */
+const META_KEY = 'core_tank_frontier_meta_v1';
+const UPGRADES = [
+  { id:'hp',   name:'Plating Bay',  desc:'+6% Max HP per level',              max:5, base:40 },
+  { id:'dmg',  name:'Munitions',    desc:'+5% damage per level',              max:5, base:40 },
+  { id:'spd',  name:'Engine Tuning',desc:'+4% kecepatan gerak per level',     max:5, base:30 },
+  { id:'scav', name:'Scavenger',    desc:'+10 starting scrap per level',      max:3, base:50 },
+  { id:'tact', name:'Tactician',    desc:'+1 reroll GRATIS per draft/level',  max:2, base:120 },
+];
+function loadMeta(){
+  try{
+    const raw = localStorage.getItem(META_KEY);
+    if(raw){ const m = JSON.parse(raw); m.bank = m.bank|0; m.up = m.up||{}; return m; }
+  }catch(e){}
+  return { bank: 0, up: {} };
+}
+function saveMeta(){ try{ localStorage.setItem(META_KEY, JSON.stringify(meta)); }catch(e){} }
+const meta = loadMeta();
+const upgCost = u => u.base * ((meta.up[u.id]||0) + 1);
+function buyUpgrade(id){
+  const u = UPGRADES.find(u => u.id === id);
+  const lvl = meta.up[id] || 0;
+  if(lvl >= u.max || meta.bank < upgCost(u)) return;
+  meta.bank -= upgCost(u);
+  meta.up[id] = lvl + 1;
+  saveMeta(); renderUpgrades(); AudioSys.pickup();
+}
+function renderUpgrades(){
+  document.getElementById('meta-bank').innerHTML = `⚙ Bank scrap: <b>${meta.bank}</b>`;
+  const w = document.getElementById('upgrades');
+  w.innerHTML = '';
+  for(const u of UPGRADES){
+    const lvl = meta.up[u.id] || 0, maxed = lvl >= u.max;
+    const row = document.createElement('div');
+    row.className = 'upg';
+    row.innerHTML = `<div><b>${u.name}</b> <span class="upg-lvl">${'●'.repeat(lvl)}${'○'.repeat(u.max-lvl)}</span><br><span class="upg-desc">${u.desc}</span></div>`;
+    const btn = document.createElement('button');
+    btn.textContent = maxed ? 'MAX' : `⚙ ${upgCost(u)}`;
+    btn.disabled = maxed || meta.bank < upgCost(u);
+    btn.onclick = () => buyUpgrade(u.id);
+    row.appendChild(btn);
+    w.appendChild(row);
+  }
+}
+
 /* ================= PLAYER ================= */
 const player = {
   mesh: null, pos: V3(0,0,8), vel: V3(),
@@ -374,9 +438,9 @@ function buildPlayer(){
 }
 const PL = id => player.parts[id] || 0;
 function recomputeStats(){
-  player.maxHp = CFG.baseHp + 40*PL('plating') + 30*PL('heavytreads');
-  player.speed = CFG.baseSpeed * (1 + .30*PL('treads') + .10*PL('heavytreads') + .25*PL('turbo'));
-  player.damage = CFG.baseDmg * (1 + .70*PL('ap'));
+  player.maxHp = Math.round((CFG.baseHp + 40*PL('plating') + 30*PL('heavytreads')) * (1 + .06*(meta.up.hp||0)));
+  player.speed = CFG.baseSpeed * (1 + .30*PL('treads') + .10*PL('heavytreads') + .25*PL('turbo')) * (1 + .04*(meta.up.spd||0));
+  player.damage = CFG.baseDmg * (1 + .70*PL('ap')) * (1 + .05*(meta.up.dmg||0));
   player.scatterOn = PL('scatter') > 0;
   player.pelletMul = player.scatterOn ? .45 : 1;
   const pellets = player.scatterOn ? 5 : 1;
@@ -848,7 +912,7 @@ function updateBullets(dt){
 
 /* ================= WAVES ================= */
 const game = { state: 'menu', wave: 0, scrap: 0, kills0: 0, time: 0,
-               spawnQueue: [], spawnT: 0, boss: null, draftChoices: [] };
+               spawnQueue: [], spawnT: 0, boss: null, draftChoices: [], freeRerolls: 0 };
 function waveComp(n){
   const q = [];
   let budget = 4 + n*2.5;
@@ -905,7 +969,7 @@ function updateWaves(dt){
       game.scrap += bonus;
       showBanner('WAVE ' + game.wave + ' SELESAI', '+' + bonus + ' scrap');
       AudioSys.pickup();
-      setTimeout(() => { if(game.state==='intermission') openDraft(); }, 1700);
+      setTimeout(() => { if(game.state==='intermission'){ game.freeRerolls = meta.up.tact||0; openDraft(); } }, 1700);
     }
   }
   // victory check after boss
@@ -957,11 +1021,15 @@ function openDraft(){
     wrap.appendChild(el);
   }
   const rb = document.getElementById('reroll-btn');
-  rb.disabled = game.scrap < 15;
-  rb.textContent = `🎲 Reroll (15 scrap) — punya ${game.scrap}`;
+  const free = game.freeRerolls > 0;
+  rb.disabled = !free && game.scrap < 15;
+  rb.textContent = free ? `🎲 Reroll GRATIS (${game.freeRerolls}x)` : `🎲 Reroll (15 scrap) — punya ${game.scrap}`;
   rb.onclick = () => {
-    if(game.scrap < 15) return;
-    game.scrap -= 15;
+    if(game.freeRerolls > 0) game.freeRerolls--;
+    else {
+      if(game.scrap < 15) return;
+      game.scrap -= 15;
+    }
     openDraft();
   };
   document.getElementById('draft').classList.remove('hidden');
@@ -1018,10 +1086,12 @@ function onPlayerDeath(){
   player.mesh.visible = false;
   setTimeout(() => {
     game.state = 'gameover';
+    const banked = game.scrap;
+    meta.bank += banked; game.scrap = 0; saveMeta();
     const end = document.getElementById('end');
     end.className = 'overlay lose';
     document.getElementById('end-title').textContent = 'TANK HANCUR';
-    document.getElementById('end-stats').innerHTML = endStats();
+    document.getElementById('end-stats').innerHTML = endStats() + `<br>Scrap masuk bank: <b>${banked}</b>`;
     end.classList.remove('hidden');
     document.getElementById('hud').classList.add('hidden');
   }, 1200);
@@ -1031,10 +1101,12 @@ function victory(){
   game.state = 'victory';
   AudioSys.draft();
   setTimeout(() => {
+    const banked = game.scrap;
+    meta.bank += banked; game.scrap = 0; saveMeta();
     const end = document.getElementById('end');
     end.className = 'overlay win';
     document.getElementById('end-title').textContent = 'RUN SELESAI! 🏆';
-    document.getElementById('end-stats').innerHTML = endStats() + `<br>Scrap: <b>${game.scrap}</b>`;
+    document.getElementById('end-stats').innerHTML = endStats() + `<br>Scrap: <b>${banked}</b> → masuk bank`;
     end.classList.remove('hidden');
     document.getElementById('hud').classList.add('hidden');
   }, 800);
@@ -1072,11 +1144,14 @@ function frame(now){
 /* ================= BOOT ================= */
 buildPlayer();
 recomputeStats();
+renderUpgrades();
 requestAnimationFrame(frame);
 document.getElementById('start-btn').onclick = () => {
   AudioSys.init();
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
+  game.scrap = 10*(meta.up.scav||0);
+  player.hp = player.maxHp;
   startWave(1);
 };
 document.getElementById('restart-btn').onclick = () => location.reload();
