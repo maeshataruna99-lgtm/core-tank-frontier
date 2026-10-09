@@ -50,6 +50,13 @@
   .part-chip b { color: #ffd34d; }
   #mute-hint { position: absolute; bottom: 14px; right: 20px; font-size: 12px;
     color: #5b6376; }
+  /* Low-HP vignette */
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 9; opacity: 0;
+    background: radial-gradient(ellipse at center, transparent 52%, rgba(229,72,77,.6) 100%); }
+  /* Floating damage numbers */
+  .dmg-num { position: fixed; transform: translate(-50%,-50%); font-weight: 800;
+    font-size: 15px; pointer-events: none; z-index: 25; opacity: 0;
+    text-shadow: 0 0 6px #000, 0 2px 2px #000; }
   /* Banner */
   #banner { position: fixed; top: 34%; left: 0; right: 0; text-align: center;
     z-index: 15; pointer-events: none; opacity: 0; transition: opacity .4s; }
@@ -90,6 +97,7 @@
 <body>
 <canvas id="game-canvas"></canvas>
 
+<div id="vignette"></div>
 <div id="hud" class="hidden">
   <div id="hp-wrap">
     <div class="bar-bg"><div id="hp-fill"></div><div id="shield-fill"></div></div>
@@ -138,7 +146,7 @@ import * as THREE from 'three';
 const CFG = {
   arenaHalf: 30,
   baseHp: 100, baseSpeed: 9, baseDmg: 12, baseFireRate: 3,
-  baseBulletSpeed: 30, baseTurretSpeed: 6.5,
+  baseBulletSpeed: 34, baseTurretSpeed: 6.5,
   magnetRadius: 4.5, maxWaves: 10,
   hpScale: 1.15, dmgScale: 1.08,
 };
@@ -487,6 +495,36 @@ function spawnFloatText(txt){
     if(t>=1){ clearInterval(iv); el.remove(); } }, 50);
 }
 
+/* ================= DAMAGE NUMBERS (pooled HTML) ================= */
+const dmgPool = [];
+function spawnDmgNum(x, y, z, txt, color){
+  let d = dmgPool.find(d => !d.active);
+  if(!d){
+    if(dmgPool.length > 28) return;
+    d = { el: document.createElement('div'), active: false, t: 0 };
+    d.el.className = 'dmg-num';
+    document.body.appendChild(d.el);
+    dmgPool.push(d);
+  }
+  _v3tmp.set(x, y, z).project(camera);
+  d.el.style.left = ((_v3tmp.x*0.5+0.5)*innerWidth + rand(-8,8)) + 'px';
+  d.el.style.top = ((-_v3tmp.y*0.5+0.5)*innerHeight) + 'px';
+  d.el.textContent = txt;
+  d.el.style.color = color || '#ffd34d';
+  d.el.style.opacity = 1;
+  d.active = true; d.t = 0.8;
+}
+const _v3tmp = V3();
+function updateDmgNums(dt){
+  for(const d of dmgPool){
+    if(!d.active) continue;
+    d.t -= dt;
+    if(d.t <= 0){ d.active = false; d.el.style.opacity = 0; continue; }
+    d.el.style.top = (parseFloat(d.el.style.top) - 46*dt) + 'px';
+    d.el.style.opacity = Math.min(1, d.t/0.5);
+  }
+}
+
 /* ================= PICKUPS ================= */
 const pickups = [];
 const scrapGeo = new THREE.OctahedronGeometry(0.35);
@@ -554,6 +592,7 @@ function spawnEnemy(type, x, z, waveMul){
 function damageEnemy(e, dmg){
   if(!e.active || e.dead) return;
   e.hp -= dmg; e.flashT = 0.09;
+  spawnDmgNum(e.pos.x, 2.6, e.pos.z, Math.round(dmg));
   e.mesh.userData.bodyMat.emissive = new THREE.Color(0xffffff);
   if(e.hp <= 0){
     e.dead = true; e.active = false; e.mesh.visible = false;
@@ -634,7 +673,7 @@ function spawnBoss(waveMul){
   let e = enemies.find(e => !e.active);
   if(!e){ e = { mesh: buildTankMesh(0xffffff, 0x333333), active:false }; scene.add(e.mesh); enemies.push(e); }
   e.active = true; e.type = 'boss'; e.dead = false;
-  e.maxHp = 900*hpM; e.hp = e.maxHp;
+  e.maxHp = 750*hpM; e.hp = e.maxHp;
   e.speed = 3.2; e.dmg = 22*Math.pow(CFG.dmgScale, waveMul); e.r = 2.2;
   e.mesh.visible = true;
   e.mesh.userData.bodyMat.color.setHex(0x8f1d22);
@@ -812,7 +851,7 @@ const game = { state: 'menu', wave: 0, scrap: 0, kills0: 0, time: 0,
                spawnQueue: [], spawnT: 0, boss: null, draftChoices: [] };
 function waveComp(n){
   const q = [];
-  let budget = 5 + n*3;
+  let budget = 4 + n*2.5;
   const pool = ['chaser','chaser'];
   if(n >= 2) pool.push('speeder','speeder','speeder');
   if(n >= 3) pool.push('gunner');
@@ -958,6 +997,10 @@ function updateHUD(){
   const left = enemies.filter(e=>e.active).length + game.spawnQueue.length;
   document.getElementById('enemies-left').textContent = game.boss ? 'KALAHKAN DREADNOUGHT' : `sisa musuh: ${left}`;
   document.getElementById('scrap-num').textContent = game.scrap;
+  // low-HP vignette pulse
+  const lowHp = player.alive && player.hp/player.maxHp < 0.3;
+  document.getElementById('vignette').style.opacity =
+    lowHp ? (0.55 + 0.35*Math.sin(performance.now()/220)) : 0;
 }
 
 /* ================= GAME OVER / VICTORY ================= */
@@ -1014,11 +1057,13 @@ function frame(now){
       updateParticles(STEP);
       updatePickups(STEP);
       updateWaves(STEP);
+      updateDmgNums(STEP);
       acc -= STEP;
     }
     updateHUD();
   } else if(game.state === 'intermission' || game.state === 'draft'){
     updateParticles(dt); // biar ledakan tetap animasi saat draft
+    updateDmgNums(dt);
   }
   updateCamera(dt);
   renderer.render(scene, camera);

@@ -11,10 +11,10 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 - [ ] Fix bug yang ditemukan
 - [ ] Tuning dasar difficulty wave 1–3
 
-## Fase 2 — Polish
-- [ ] Balance: damage/HP musuh, kekuatan kartu, harga reroll
-- [ ] Juice: partikel ledakan, screen shake, transisi wave
-- [ ] Rapikan menu utama & layar game over/victory
+## Fase 2 — Polish (dikerjakan 9 Okt 2026)
+- [x] Balance: wave budget dilunakkan (4 + n*2.5), boss HP 900 → 750, bullet speed 30 → 34
+- [x] Juice: floating damage numbers (pooled HTML), low-HP vignette pulse
+- [ ] Rapikan menu utama & layar game over/victory (opsional, nanti)
 
 ## Fase 3 — Deploy ke Vercel
 - [ ] Bersihkan folder deploy (pisahkan breakdown.md)
