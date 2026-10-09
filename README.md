@@ -30,6 +30,8 @@ engine, utility). Die, and the run ends — how far can you get?
 - **Wave 10:** boss fight — Dreadnought with 3 attack patterns.
 - **Cards:** 17 parts across 6 slots, rarities Common → Legendary.
   Duplicates stack up to Lv 3 (Legendaries are unique). Reroll available.
+- **Evolutions:** draft 1 dari 3 evolusi UNIK tiap wave 3/6/9 (boleh kumpulkan
+  beberapa varian, masing-masing cuma bisa diambil sekali).
 - **Pickups:** scrap (currency) and repair kits drop from enemies.
 
 ## Project layout

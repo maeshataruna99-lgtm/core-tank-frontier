@@ -23,6 +23,7 @@ Disusun 9 Okt 2026. Status: MVP prototipe jadi, belum playtest.
 ## Fase 4 — Stretch (diputuskan: kerjakan berurutan)
 - [x] Meta progression + localStorage (upgrade permanen antar-run) — selesai 9 Okt 2026
 - [x] Kartu Legendary dengan efek unik (5 kartu: Phoenix, Juggernaut, Sunfall, Phase Drive, Greed) — selesai 9 Okt 2026
+- [x] Sistem Evolusi — draft evolusi unik di wave 3/6/9, boleh kumpulkan beberapa varian (6 evolusi: Vampiric, Chrono, Glass Cannon, Titan, EMP, Adrenaline) — selesai 9 Okt 2026
 - [ ] Varian arena & obstacle
 - [ ] Kontrol touch untuk mobile
 - [ ] Daily run / leaderboard (butuh backend — scope besar)
