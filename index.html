@@ -2101,7 +2101,7 @@ function runSelfTest(){
       if(players.length < N + 1) return;
       clearInterval(waitReg);
       say(true, `host registered ${N} guest(s); total players ${players.length}`);
-      const liCount = document.querySelectorAll('#lobby-players li').length;
+      const liCount = document.querySelectorAll('#lobby-players .lobby-p').length;
       say(liCount === N + 1, `lobby shows ${N+1} players (found ${liCount})`);
       startMPGame();
       say(true, `game started, wave ${game.wave}`);
