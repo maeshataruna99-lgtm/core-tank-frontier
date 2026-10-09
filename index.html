@@ -63,6 +63,18 @@
   #banner h1 { font-size: 56px; margin: 0; letter-spacing: 8px; color: #fff;
     text-shadow: 0 0 24px rgba(255,211,77,.6); }
   #banner p { color: #8b93a7; font-size: 16px; letter-spacing: 2px; }
+  /* Stage generation ("GENERATING WORLD") overlay */
+  #genworld { position: fixed; inset: 0; z-index: 40; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(5,7,12,.45); pointer-events: none; }
+  #genworld-title { font-size: 34px; letter-spacing: 8px; color: #ffd34d;
+    text-shadow: 0 0 24px rgba(255,211,77,.5); animation: genpulse 1.1s infinite; }
+  #genworld-bar { width: 300px; height: 10px; margin: 16px 0 10px;
+    background: #1a2130; border: 1px solid #55688f; }
+  #genworld-fill { height: 100%; width: 0%;
+    background: linear-gradient(90deg,#ffd34d,#ff9a3d); transition: width .15s; }
+  #genworld-sub { color: #8b93a7; font-size: 14px; letter-spacing: 2px; }
+  @keyframes genpulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
   /* Draft */
   #draft { background: rgba(5,7,12,.88); backdrop-filter: blur(4px); }
   #draft h1 { color: #ffd34d; letter-spacing: 4px; margin-bottom: 6px; }
@@ -236,11 +248,15 @@ html, body { touch-action: none; overscroll-behavior: none; }
 </div>
 
 <div id="banner"><h1 id="banner-title"></h1><p id="banner-sub"></p></div>
+<div id="genworld" class="hidden">
+  <div id="genworld-title">GENERATING WORLD</div>
+  <div id="genworld-bar"><div id="genworld-fill"></div></div>
+  <div id="genworld-sub">membangun arena…</div>
+</div>
 <button id="btn-dash" class="touch-only tc-btn">DASH</button>
 <button id="btn-mute-touch" class="touch-only tc-btn">SUARA</button>
 <button id="btn-fs-touch" class="touch-only tc-btn">LAYAR</button>
 
-// ---- JS: insert AFTER the anchor line (end of INPUT section) ----
 
 <div id="menu" class="overlay">
   <h1>ROGUE TANK</h1>
@@ -340,6 +356,7 @@ const AudioSys = {
   shoot(){ this.tone(520, 0.08, 'square', 0.06, -300); },
   enemyShoot(){ this.tone(220, 0.1, 'sawtooth', 0.05, -120); },
   boom(){ this.noise(0.4, 0.25); this.tone(90, 0.35, 'sine', 0.2, -60); },
+  thud(){ this.noise(0.22, 0.3); this.tone(65, 0.22, 'sine', 0.28, -35); },
   hit(){ this.tone(140, 0.12, 'sawtooth', 0.12, -60); },
   pickup(){ this.tone(880, 0.09, 'sine', 0.08, 440); },
   draft(){ this.tone(392,0.12,'triangle',0.12); setTimeout(()=>this.tone(523,0.12,'triangle',0.12),110); setTimeout(()=>this.tone(659,0.2,'triangle',0.12),220); },
@@ -356,14 +373,8 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0e14);
 scene.fog = new THREE.Fog(0x0b0e14, 60, 140);
 
-// SNIPPET 1 — beri nama pada HemisphereLight + deklarasikan worldMats.
-// Material grid diisi di blok Ground (snippet 2); obstacle/obstacleTop dipakai
-// agen 03 untuk mesh obstacle dinamis.
 const hemi = new THREE.HemisphereLight(0xbdd3ff, 0x1a2030, 0.9);
 scene.add(hemi);
-// Shared world materials — diwarnai ulang per arena oleh applyArenaTheme().
-// worldMats.grid adalah LineBasicMaterial milik GridHelper (vertexColors aktif),
-// diwarnai via .color (menjadi tint di atas vertex colors putih/abu bawaan).
 const worldMats = {
   ground: new THREE.MeshLambertMaterial({ color: 0x11161f }),
   grid: null, // diisi di blok Ground di bawah
@@ -375,10 +386,6 @@ const sun = new THREE.DirectionalLight(0xfff2d9, 1.6);
 sun.position.set(30, 50, 15);
 scene.add(sun);
 
-// SNIPPET 2 — blok Ground memakai worldMats.ground + worldMats.grid.
-// GridHelper dibuat dengan vertex colors putih/abu agar satu tint (gridA)
-// menghasilkan tampilan two-tone yang konsisten di semua tema.
-// Ground
 {
   const g = new THREE.Mesh(
     new THREE.PlaneGeometry(CFG.arenaHalf*2+14, CFG.arenaHalf*2+14),
@@ -389,8 +396,6 @@ scene.add(sun);
   worldMats.grid = grid.material;
   grid.position.y = 0.02; scene.add(grid);
 }
-// SNIPPET 3 — blok dinding arena memakai worldMats.wall agar bisa di-tema.
-// Arena walls (visual) — material dishare via worldMats.wall untuk tema arena
 {
   const H = CFG.arenaHalf;
   const mk = (w,d,x,z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,2.5,d), worldMats.wall);
@@ -398,18 +403,10 @@ scene.add(sun);
   mk(H*2+4, 2, 0, -H-1); mk(H*2+4, 2, 0, H+1);
   mk(2, H*2+4, -H-1, 0); mk(2, H*2+4, H+1, 0);
 }
-// (Replace from the line above through the block's closing `}` — the line
-// containing only `}` immediately before the blank line preceding
-// `// Isometric camera rig`.)
 
-// Obstacles (circle colliders) — DYNAMIC pooled meshes (agent 03).
-// The live collider data. collideWorld() and updateBullets() read this array.
 // NOTE (agent 05): this is `const` — mutate in place
-//   (obstacles.length = 0; obstacles.push(...genObstacleLayout(...))).
 const obstacles = [];
 
-// Pooled meshes: 16 obstacle bodies (shared unit-box geometry) + 16 thin
-// top-face accent boxes. Pooling avoids per-wave geometry/material churn.
 const obstaclePool = [];
 const obstacleTopPool = [];
 {
@@ -430,15 +427,11 @@ const obstacleTopPool = [];
   }
 }
 
-// Deterministic height in [2.5, 4.2] from the obstacle index (no Math.random).
 function obstacleHeight(i){
   const h = Math.sin(i * 127.1 + 311.7) * 43758.5453;
   return 2.5 + (h - Math.floor(h)) * 1.7;
 }
 
-// Rebuild pooled meshes from the live `obstacles` array.
-// Materials are re-resolved here so agent 01's applyArenaTheme() recoloring
-// (per-wave) is picked up whenever agent 05 calls this after theming.
 function buildObstacleMeshes(){
   const bodyMat = (typeof worldMats !== 'undefined' && worldMats.obstacle) || obstaclePool[0].material;
   const topMat = (typeof worldMats !== 'undefined' && worldMats.obstacleTop) || obstacleTopPool[0].material;
@@ -452,7 +445,6 @@ function buildObstacleMeshes(){
       m.visible = true;
       m.scale.set(o.r * 1.7, h, o.r * 1.7);
       m.position.set(o.x, h / 2, o.z);
-      // Subtle top-face accent: thin inset slab resting on the body.
       t.material = topMat;
       t.visible = true;
       t.scale.set(o.r * 1.7 * 0.96, 0.22, o.r * 1.7 * 0.96);
@@ -469,9 +461,179 @@ function clearObstacleMeshes(){
   for(const t of obstacleTopPool) t.visible = false;
 }
 
-// Default menu-backdrop layout: the classic 7 obstacles, so the main menu
-// keeps its current arena look until agent 05 wires per-wave layouts in
-// startWave() (which will overwrite `obstacles` and call buildObstacleMeshes()).
+/* ============ STAGE INTRO: "GENERATING WORLD" drop-in animation ============
+   Bangunan jatuh dari langit satu per satu (stagger deterministik dari index),
+   lalu wave dimulai. Dipakai host/solo di startWave() dan guest di onSnapshot(). */
+const DROP_H = 34;
+function decorateObstacles(){
+  obstacles.forEach((o, i) => {
+    o.hp = o.maxHp = Math.round(30 + o.r * 14);
+    o.dead = false; o.landed = false;
+    o.dropDelay = 0.35 + i * 0.13; // stagger — deterministik, sama di host & guest
+    o.vy = 0; o.y = 0; o.squash = 0; o.sfxT = 0;
+  });
+}
+function beginStageIntro(){
+  game.generating = true;
+  for(let i = 0; i < obstacles.length; i++){
+    const o = obstacles[i], m = obstaclePool[i], t = obstacleTopPool[i];
+    const h = obstacleHeight(i);
+    o.y = DROP_H + i * 1.4; o.vy = 0;
+    m.position.set(o.x, h / 2 + o.y, o.z); m.visible = true;
+    t.position.set(o.x, h + 0.11 + o.y, o.z); t.visible = true;
+  }
+  showGenWorld(true);
+  updateGenProgress(0, obstacles.length);
+}
+function updateStageIntro(dt){
+  let landed = 0;
+  for(let i = 0; i < obstacles.length; i++){
+    const o = obstacles[i], m = obstaclePool[i], t = obstacleTopPool[i];
+    const h = obstacleHeight(i);
+    if(o.dead){ landed++; continue; }
+    if(!o.landed){
+      o.dropDelay -= dt;
+      if(o.dropDelay <= 0){
+        o.vy -= 70 * dt; o.y += o.vy * dt;
+        if(o.y <= 0){
+          o.y = 0; o.landed = true; o.squash = 0.22;
+          burst(o.x, o.z, 0xcfa76a, 12, 7);
+          AudioSys.thud(); addShake(0.12);
+          pushOutOfObstacle(o); // jangan sampai mendarat di atas tank
+          landed++;
+        } else {
+          m.position.y = h / 2 + o.y;
+          t.position.y = h + 0.11 + o.y;
+        }
+      }
+    } else landed++;
+    if(o.squash > 0){
+      o.squash -= dt;
+      const k = Math.max(0, o.squash) / 0.22;
+      m.scale.set(o.r * 1.7 * (1 + 0.12 * k), h * (1 - 0.18 * k), o.r * 1.7 * (1 + 0.12 * k));
+      m.position.y = h * (1 - 0.18 * k) / 2;
+      t.position.y = h * (1 - 0.18 * k) + 0.11;
+      if(o.squash <= 0){
+        m.scale.set(o.r * 1.7, h, o.r * 1.7);
+        m.position.y = h / 2; t.position.y = h + 0.11;
+      }
+    }
+  }
+  updateGenProgress(landed, obstacles.length);
+  if(landed >= obstacles.length) finishStageIntro();
+}
+function pushOutOfObstacle(o){
+  for(const p of players){
+    if(!p.alive) continue;
+    const dx = p.pos.x - o.x, dz = p.pos.z - o.z, rr = o.r + 1.2;
+    const d2 = dx * dx + dz * dz;
+    if(d2 < rr * rr){
+      const d = Math.sqrt(d2) || 0.001, push = (rr - d) / d;
+      p.pos.x += dx * push; p.pos.z += dz * push;
+    }
+  }
+}
+function finishStageIntro(){
+  game.generating = false;
+  showGenWorld(false);
+  if(isGuest()) return; // spawn musuh = otoritas host
+  const n = game.wave, ai = arenaForWave(n);
+  if(n >= CFG.maxWaves){
+    spawnBoss(n);
+  } else {
+    game.spawnQueue = waveComp(n);
+    game.spawnT = 0.5;
+    showBanner('WAVE ' + n, ARENAS[ai].name + (n === 1 ? ' · selamat bertahan!' : ''));
+    AudioSys.wave();
+  }
+}
+function showGenWorld(on){
+  document.getElementById('genworld').classList.toggle('hidden', !on);
+}
+function updateGenProgress(done, total){
+  const fill = document.getElementById('genworld-fill');
+  if(fill) fill.style.width = (100 * done / Math.max(1, total)) + '%';
+  const sub = document.getElementById('genworld-sub');
+  if(sub) sub.textContent = 'membangun arena… ' + done + '/' + total;
+}
+
+/* ============ DESTRUCTIBLE BUILDINGS: debris dinamis ============
+   Bangunan bisa dihancurkan peluru pemain -> pecah jadi puing dinamis
+   (fisika jatuh + pantul + fade). Sinkron host->guest via event 'obst'. */
+const debrisPool = [];
+{
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  for(let i = 0; i < 56; i++){
+    const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x8a7a5f }));
+    m.visible = false; scene.add(m);
+    debrisPool.push({ mesh: m, active: false, vel: new THREE.Vector3(),
+      ang: new THREE.Vector3(), life: 0, size: 1, sizeY: 1 });
+  }
+}
+function spawnDebris(x, z, h){
+  const col = (typeof worldMats !== 'undefined' && worldMats.obstacle)
+    ? worldMats.obstacle.color.getHex() : 0x8a7a5f;
+  let n = 10;
+  for(const d of debrisPool){
+    if(d.active) continue;
+    if(n-- <= 0) break;
+    d.active = true;
+    d.life = 1.2 + Math.random() * 0.8;
+    d.size = 0.5 + Math.random() * 0.9;
+    d.sizeY = d.size * (0.6 + Math.random() * 0.8);
+    d.mesh.scale.set(d.size, d.sizeY, d.size);
+    d.mesh.material.color.setHex(col);
+    d.mesh.position.set(x + (Math.random() - 0.5) * 3, h * (0.3 + Math.random() * 0.7), z + (Math.random() - 0.5) * 3);
+    d.mesh.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
+    d.mesh.visible = true;
+    const a = Math.random() * Math.PI * 2, sp = 4 + Math.random() * 8;
+    d.vel.set(Math.cos(a) * sp, 6 + Math.random() * 9, Math.sin(a) * sp);
+    d.ang.set((Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12, (Math.random() - 0.5) * 12);
+  }
+}
+function updateDebris(dt){
+  for(const d of debrisPool){
+    if(!d.active) continue;
+    d.life -= dt;
+    if(d.life <= 0){ d.active = false; d.mesh.visible = false; continue; }
+    d.vel.y -= 30 * dt;
+    d.mesh.position.addScaledVector(d.vel, dt);
+    const s = d.size;
+    if(d.mesh.position.y < s / 2){
+      d.mesh.position.y = s / 2;
+      if(d.vel.y < 0) d.vel.y *= -0.35;
+      d.vel.x *= 0.7; d.vel.z *= 0.7;
+      d.ang.multiplyScalar(0.6);
+    }
+    d.mesh.rotation.x += d.ang.x * dt;
+    d.mesh.rotation.y += d.ang.y * dt;
+    d.mesh.rotation.z += d.ang.z * dt;
+    if(d.life < 0.4){
+      const k = Math.max(0.001, d.life / 0.4);
+      d.mesh.scale.set(d.size * k, d.sizeY * k, d.size * k);
+    }
+  }
+}
+function damageObstacle(oi, dmg, hx, hz){
+  const o = obstacles[oi];
+  if(!o || o.dead || !o.landed) return;
+  o.hp -= dmg;
+  burst(hx, hz, 0xffd34d, 3, 4);
+  if(game.time - (o.sfxT || 0) > 0.18){ o.sfxT = game.time; AudioSys.hit(); }
+  if(o.hp <= 0) destroyObstacle(oi);
+}
+function destroyObstacle(oi, fromNet){
+  const o = obstacles[oi];
+  if(!o || o.dead) return;
+  o.dead = true;
+  obstaclePool[oi].visible = false;
+  obstacleTopPool[oi].visible = false;
+  spawnDebris(o.x, o.z, obstacleHeight(oi));
+  burst(o.x, o.z, 0xcfa76a, 18, 9);
+  AudioSys.boom(); addShake(0.3);
+  if(!fromNet && isMP() && isHost()) hostBroadcast({ t: 'ev', k: 'obst', i: oi });
+}
+
 obstacles.push(
   { x:-14, z:-10, r:2.6 }, { x:12, z:-14, r:3.2 }, { x:-10, z:12, r:3.0 },
   { x:14, z:10, r:2.4 }, { x:0, z:-2, r:2.2 }, { x:-2, z:20, r:2.6 },
@@ -479,7 +641,6 @@ obstacles.push(
 );
 buildObstacleMeshes();
 
-// Isometric camera rig
 const ISO_D = 24;
 let camAspect = innerWidth/innerHeight;
 const camera = new THREE.OrthographicCamera(-ISO_D*camAspect, ISO_D*camAspect, ISO_D, -ISO_D, 0.1, 300);
@@ -508,9 +669,6 @@ function updateCamera(dt){
   camera.lookAt(camTarget.x, 0, camTarget.z);
 }
 function addShake(s){ shake = Math.min(2.2, shake + s); }
-// SNIPPET 4 — sisipkan section ARENA THEMES setelah resize listener (akhir WORLD).
-// Berisi: data 5 tema, arenaForWave, applyArenaTheme, + sinkronisasi awal.
-// Listener resize asli dipertahankan verbatim di bawah.
 addEventListener('resize', () => {
   camAspect = innerWidth/innerHeight;
   camera.left = -ISO_D*camAspect; camera.right = ISO_D*camAspect;
@@ -520,8 +678,6 @@ addEventListener('resize', () => {
 });
 
 /* ================= ARENA THEMES (agen 01) ================= */
-// 5 tema visual arena. Nilai default tema [0] RERUNTUHAN BAJA sama persis dengan
-// warna hardcoded sebelum refactor, sehingga tampilan awal tidak berubah.
 const ARENAS = [
   { name: 'RERUNTUHAN BAJA',
     ground: 0x11161f, gridA: 0x2a3348, gridB: 0x1a2233,
@@ -555,17 +711,10 @@ const ARENAS = [
     fogNear: 55, fogFar: 125 },
 ];
 
-// Progresi tier: tema berganti tiap 2 wave agar pemain merasakan eskalasi
-// tanpa visual whiplash di tengah run. Wave 1-2, 3-4, 5-6, 7-8, 9-10.
-// Wave 10 (boss DREADNOUGHT) selalu KAWAH VULKANIK sebagai finale klimaks.
 function arenaForWave(w){
   return Math.min(ARENAS.length - 1, Math.floor((w - 1) / 2));
 }
 
-// Terapkan tema arena: background, fog, semua worldMats, hemisphere + sun.
-// Mengembalikan objek tema (dipakai agen 05 untuk banner nama arena).
-// Catatan: dipanggil juga oleh guest (agen 05) saat wave berubah agar
-// guest melihat tema yang sama dengan host (host-authoritative).
 function applyArenaTheme(i){
   const t = ARENAS[Math.max(0, Math.min(ARENAS.length - 1, i))];
   scene.background.set(t.bg);
@@ -583,15 +732,9 @@ function applyArenaTheme(i){
   return t;
 }
 
-// Sinkronisasi awal: jadikan ARENAS satu-satunya sumber kebenaran warna.
 applyArenaTheme(0);
 
 /* ================= INPUT ================= */
-// DIRECTION: insert-after (register right after the INPUT section header).
-// Non-passive guard: prevents pull-to-refresh / page scroll gestures while
-// playing on touch devices. Menus (state != 'playing') keep default behavior.
-// `game` is defined earlier in the module (CONFIG/WORLD sections); state is
-// read at event time, so registration order is safe.
 document.addEventListener('touchmove', e => { if(game.state==='playing') e.preventDefault(); }, { passive:false });
 const keys = {};
 addEventListener('keydown', e => {
@@ -608,7 +751,6 @@ addEventListener('mousemove', e => {
 addEventListener('mousedown', e => { if(e.button===0) mouse.down = true; AudioSys.init(); });
 addEventListener('mouseup', e => { if(e.button===0) mouse.down = false; });
 addEventListener('contextmenu', e => e.preventDefault());
-// Fullscreen toggle — dipakai tombol menu (desktop) & tombol LAYAR (touch).
 function toggleFullscreen(){
   try{
     if(document.fullscreenElement) document.exitFullscreen();
@@ -624,7 +766,6 @@ function initTouchButtons(){
   const setMuteLabel = () => { muteBtn.textContent = AudioSys.muted ? 'SUARA OFF' : 'SUARA ON'; };
   setMuteLabel();
 
-  // DASH: hold to dash (mirrors Space on desktop; agent 10 reads TouchUI.dash)
   dashBtn.addEventListener('touchstart', e => {
     e.preventDefault(); // stop synthetic mouse/click + document aim handlers
     TouchUI.dash = true;
@@ -638,7 +779,6 @@ function initTouchButtons(){
   dashBtn.addEventListener('touchend', dashEnd, { passive: false });
   dashBtn.addEventListener('touchcancel', dashEnd, { passive: false });
 
-  // MUTE: tap toggles sound (mirrors KeyM on desktop)
   muteBtn.addEventListener('touchstart', e => {
     e.preventDefault();
     AudioSys.init(); // unlock audio on first touch, like mousedown does
@@ -646,7 +786,6 @@ function initTouchButtons(){
     setMuteLabel();
   }, { passive: false });
 
-  // FULLSCREEN: tap toggles fullscreen (handheld-friendly, works on desktop too)
   const fsBtn = document.getElementById('btn-fs-touch');
   if(fsBtn){
     fsBtn.addEventListener('touchstart', e => {
@@ -656,22 +795,14 @@ function initTouchButtons(){
   }
 }
 // NOTE: initTouchButtons() is NOT self-invoked here; the integrator (agent 10)
-// calls it once at boot alongside the other touch init functions.
 /* ================= TOUCH CORE (agent 06) ================= */
-// Left-half dynamic virtual joystick. Right-half touches are agent 07 (aim).
-// Agent 10 consumes TouchUI.moveX/moveZ in readLocalInput; agent 08 owns TouchUI.dash.
 function isTouchDevice(){ return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; }
 const TouchUI = { active:false, visible:false, joyId:null, joyOX:0, joyOY:0,
   moveX:0, moveZ:0, aimX:0, aimZ:0, firing:false, dash:false,
   setVisible(v){ this.visible=v; document.querySelectorAll('.touch-only').forEach(e=>e.style.display=(v&&this.active)?'':'none'); } };
-// Agent 07 — right-side touch aim + fire.
-// Depends on agent 06 (TouchUI object + setVisible). Integrator applies 06 before 07.
 
 let aimId = null; // identifier of the touch currently driving aim/fire, null = none
 
-// Raycast from explicit client (pixel) coordinates onto the y=0 ground plane.
-// Same math as groundPointFromMouse() but does NOT read or mutate the global
-// mouse object; camera is the existing global.
 function groundPointFromScreen(cx, cy){
   const ndc = new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
   const rc = new THREE.Raycaster();
@@ -683,9 +814,6 @@ function groundPointFromScreen(cx, cy){
   return V3(o.x + d.x * t, 0, o.z + d.z * t);
 }
 
-// Touches starting on UI chrome (buttons, inputs, panels, touch buttons, the
-// left-side joystick zone of agent 06) must not become aim touches.
-// Mirrors the ignore check of agent 06's handlers; keep the two aligned.
 function touchIsOnUI(e){
   const t = e.target;
   return !!(t && t.closest && t.closest('button, input, #menu, #net, #draft, #meta-panel, #end, .touch-btn, .joystick'));
@@ -729,10 +857,7 @@ function initTouchAim(){
   document.addEventListener('touchcancel', releaseAim);
 }
 // NOTE: initTouchAim() is NOT self-invoked here; the integrator (agent 10)
-// calls it once at boot alongside the other touch init functions.
 // NOTE: TouchUI.aimX/aimZ start at 0 (from agent 06's literal). Agent 10's
-// readLocalInput hook treats a missing/stale aim as "aim at/near the player",
-// so no per-run reset is needed in this section.
 
 function initTouchUI(){
   const JOY_R = 60; // px: stick radius mapping to full deflection; base is 2*JOY_R wide
@@ -785,11 +910,8 @@ function initTouchUI(){
   }, { passive: false });
   document.addEventListener('touchend', onEnd, { passive: true });
   document.addEventListener('touchcancel', onEnd, { passive: true });
-  // Listeners registered on all devices (guarded by TouchUI.active at runtime);
-  // only real touch devices auto-enable. Tests may force TouchUI.active = true.
   if(isTouchDevice()) TouchUI.active = true;
 }
-// Screen-relative move basis (camera looks along -(1,1.35,1))
 const MOVE_UP = V3(-1,0,-1).normalize();    // W
 const MOVE_RIGHT = V3(1,0,-1).normalize(); // D
 function groundPointFromMouse(){
@@ -807,17 +929,14 @@ function buildTankMesh(bodyColor=0x4d9fff, accentColor=0x2b6fd6){
   const bodyMat = new THREE.MeshLambertMaterial({ color: bodyColor });
   const darkMat = new THREE.MeshLambertMaterial({ color: 0x1c2330 });
   const accMat = new THREE.MeshLambertMaterial({ color: accentColor });
-  // tracks
   for(const s of [-1,1]){
     const tr = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 3.4), darkMat);
     tr.position.set(s*1.05, 0.35, 0); g.add(tr);
   }
-  // hull
   const hull = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.8, 3.0), bodyMat);
   hull.position.y = 0.75; g.add(hull);
   const nose = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.5, 0.8), accMat);
   nose.position.set(0, 0.7, 1.7); g.add(nose);
-  // turret
   const turret = new THREE.Group(); turret.position.y = 1.35;
   const dome = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.0, 0.6, 12), bodyMat);
   turret.add(dome);
@@ -962,7 +1081,6 @@ const isHost = () => Net.mode === 'host';
 const isGuest = () => Net.mode === 'guest';
 const isMP = () => Net.mode !== 'solo';
 const mpCount = () => isMP() ? players.length : 1;
-// difficulty auto-scale by player count
 const hpMulMP = () => 1 + 0.6*(mpCount()-1);
 const budgetMulMP = () => 1 + 0.75*(mpCount()-1);
 const dmgMulMP = () => 1 + 0.15*(mpCount()-1);
@@ -995,14 +1113,12 @@ function buildPlayer(p){
   p.mesh = buildTankMesh(PLAYER_COLORS[p.colorIdx % PLAYER_COLORS.length]);
   p.mesh.position.copy(p.pos);
   scene.add(p.mesh);
-  // shield bubble
   const sb = new THREE.Mesh(
     new THREE.SphereGeometry(2.2, 16, 12),
     new THREE.MeshBasicMaterial({ color: 0x5ac8ff, transparent: true, opacity: 0.18 })
   );
   sb.position.y = 1; sb.visible = false;
   p.mesh.add(sb); p.shieldMesh = sb;
-  // chrono field ring
   const ring = new THREE.Mesh(
     new THREE.RingGeometry(9.5, 10, 48),
     new THREE.MeshBasicMaterial({ color: 0x5ac8ff, transparent: true, opacity: 0.13, side: THREE.DoubleSide })
@@ -1029,7 +1145,6 @@ function recomputeStats(p = player){
   p.magnetMul = PL('greed',p)>0 ? 2 : 1;
   p.hp = Math.min(p.hp, p.maxHp);
   p.shield = Math.min(p.shield, p.maxShield);
-  // dual mount visual: second barrel
   if(p.mesh){
     const barrels = p.mesh.userData.barrels;
     if(PL('dual',p)>0 && barrels.children.length===1){
@@ -1238,7 +1353,6 @@ function spawnPickup(x, z, kind){
   p.id = ++Net.kid;
   p.mesh.material = kind==='scrap' ? scrapMat : repairMat;
   p.mesh.position.set(clamp(x,-28,28), 0.6, clamp(z,-28,28));
-// (di dalam spawnPickup; radius kecil karena pickup hanya perlu di luar obstacle.)
 { const _sp04 = resolveSpawnFromObstacles(p.mesh.position.x, p.mesh.position.z, 0.5);
   p.mesh.position.x = _sp04.x; p.mesh.position.z = _sp04.z; }
 }
@@ -1286,7 +1400,6 @@ function nearestPlayer(x, z){
   }
   return best;
 }
-// Musuh aktif terdekat (termasuk boss) dalam jarak maxD — untuk auto-aim mobile.
 function nearestEnemy(x, z, maxD = 48){
   let best = null, bd = maxD*maxD;
   for(const e of enemies){
@@ -1309,7 +1422,6 @@ function makeEnemyMesh(type){
   }
   return mesh;
 }
-// enemy bullets: authoritative + queued for guest visuals
 function foeShot(x, z, yaw, speed, dmg){
   spawnBullet(x, z, yaw, speed, dmg, 0, false);
   if(isHost()) Net.shotQ.push([r2(x), r2(z), r2(yaw), r2(speed), 1, -1]);
@@ -1330,9 +1442,6 @@ function spawnEnemy(type, x, z, waveMul){
   e.mesh.visible = true;
   e.mesh.userData.bodyMat.color.setHex(t.color);
   e.mesh.position.set(x, 0, z);
-// (di dalam spawnEnemy; e.r sudah di-set beberapa baris sebelumnya.
-//  e.pos = e.mesh.position di baris berikut me-alias Vector3 yang sama,
-//  jadi mutasi di sini ikut terbawa.)
 { const _sp04 = resolveSpawnFromObstacles(e.mesh.position.x, e.mesh.position.z, e.r);
   e.mesh.position.x = _sp04.x; e.mesh.position.z = _sp04.z; }
   e.pos = e.mesh.position;
@@ -1386,7 +1495,6 @@ function updateEnemies(dt){
     const d = Math.hypot(dx,dz) || 1;
     let mx = 0, mz = 0;
     if(e.type === 'gunner'){
-      // keep distance ~13, strafe
       const want = 13;
       const radial = d > want+2 ? 1 : d < want-2 ? -1 : 0;
       mx = dx/d*radial + -dz/d*0.5*Math.sin(e.wob);
@@ -1413,9 +1521,7 @@ function updateEnemies(dt){
     e.pos.x += mx/ml*e.speed*slowM*dt; e.pos.z += mz/ml*e.speed*slowM*dt;
     e.mesh.rotation.y = Math.atan2(mx, mz);
     e.mesh.userData.turret.rotation.y = angDiff(e.mesh.rotation.y, e.turretYaw);
-    // obstacle + bounds
     collideWorld(e.pos, e.r);
-    // contact damage (any player)
     e.contactT -= dt;
     if(e.contactT <= 0){
       for(const pl of players){
@@ -1435,7 +1541,6 @@ function updateEnemies(dt){
     if(e.flashT > 0){ e.flashT -= dt;
       if(e.flashT <= 0) e.mesh.userData.bodyMat.emissive = new THREE.Color(0x000000); }
   }
-  // separation (avoid stacking)
   for(let i=0;i<enemies.length;i++){
     const a = enemies[i]; if(!a.active) continue;
     for(let j=i+1;j<enemies.length;j++){
@@ -1464,8 +1569,6 @@ function spawnBoss(waveMul){
   e.mesh.userData.bodyMat.color.setHex(0x8f1d22);
   e.mesh.scale.set(2.1, 2.1, 2.1);
   e.mesh.position.set(0, 0, -20); e.pos = e.mesh.position;
-// (di dalam spawnBoss; e.r = 2.2 sudah di-set baris sebelumnya.
-//  Boss summon attack memanggil spawnEnemy -> otomatis ikut ter-resolve.)
 { const _sp04 = resolveSpawnFromObstacles(e.mesh.position.x, e.mesh.position.z, e.r);
   e.mesh.position.x = _sp04.x; e.mesh.position.z = _sp04.z; }
   e.turretYaw = 0; e.atkT = 2.5; e.atkMode = 0; e.flashT = 0; e.contactT = 0; e.wob = 0; e.stun = 0;
@@ -1482,7 +1585,6 @@ function updateBoss(e, dt){
   const dx = tgt.pos.x - e.pos.x, dz = tgt.pos.z - e.pos.z;
   const d = Math.hypot(dx,dz) || 1;
   e.mesh.rotation.y += angDiff(e.mesh.rotation.y, Math.atan2(dx,dz)) * Math.min(1, 2*dt);
-  // slow approach
   if(d > 9){ e.pos.x += dx/d*e.speed*dt; e.pos.z += dz/d*e.speed*dt; }
   e.turretYaw = Math.atan2(dx, dz);
   e.mesh.userData.turret.rotation.y = angDiff(e.mesh.rotation.y, e.turretYaw);
@@ -1549,7 +1651,6 @@ function mulberry32(seed){
   };
 }
 
-// MP spawn spots (same as startWave) — keep-clear radius 7 around each.
 const OBSTACLE_KEEP_SPAWNS = [[0,8],[7,-5],[-7,-5],[0,-13]];
 const OBSTACLE_KEEP_SPAWN_R2 = 49;   // 7^2
 const OBSTACLE_KEEP_CENTER_R2 = 25;  // 5^2 around (0,0)
@@ -1580,7 +1681,6 @@ function genObstacleLayout(wave, arenaIdx, runSeed){
     return true;
   }
 
-  // Place one obstacle near (cx,cz): clamp inside arena, jitter on rejection.
   function tryPlace(cx, cz, r){
     let x = Math.max(-H, Math.min(H, cx));
     let z = Math.max(-H, Math.min(H, cz));
@@ -1647,7 +1747,6 @@ function genObstacleLayout(wave, arenaIdx, runSeed){
       break;
     }
   }
-  // Top-up: if a style under-filled under heavy rejection, fill the rest with scatter.
   if(out.length < count) scatter(count - out.length);
   return out;
 }
@@ -1655,6 +1754,7 @@ function collideWorld(p, r){
   const H = CFG.arenaHalf - r;
   p.x = clamp(p.x, -H, H); p.z = clamp(p.z, -H, H);
   for(const o of obstacles){
+    if(o.dead || o.landed === false) continue; // hancur / masih jatuh dari langit
     const dx = p.x-o.x, dz = p.z-o.z, rr = r+o.r;
     const d2 = dx*dx+dz*dz;
     if(d2 < rr*rr && d2 > 0.0001){
@@ -1665,12 +1765,8 @@ function collideWorld(p, r){
 }
 /* ================= PLAYER UPDATE ================= */
 function resolveSpawnFromObstacles(x, z, r){
-  // Kembalikan {x, z} yang sudah di-push keluar dari semua lingkaran obstacle.
-  // Memakai collideWorld (baca global `obstacles`) + clamp batas arena.
   const p = { x: x, z: z };
   collideWorld(p, r);
-  // Kasus degenerat: titik TEPAT di pusat obstacle (collideWorld skip d≈0
-  // untuk hindari bagi-nol) -> dorong keluar ke arah +x lalu clamp ulang.
   for(const o of obstacles){
     const dx = p.x - o.x, dz = p.z - o.z, rr = r + o.r;
     if(dx*dx + dz*dz < rr*rr){
@@ -1684,8 +1780,6 @@ function resolveSpawnFromObstacles(x, z, r){
 }
 function readLocalInput(p){
   if(typeof TouchUI !== 'undefined' && TouchUI.active && TouchUI.visible){
-    // Auto-targeting (mobile): turret otomatis membidik musuh terdekat.
-    // Aim manual via sentuhan kanan dipakai saat tidak ada musuh dalam jarak.
     const tgt = nearestEnemy(p.pos.x, p.pos.z, 48);
     return { ix: TouchUI.moveX, iz: TouchUI.moveZ,
       ax: tgt ? tgt.pos.x : (TouchUI.aimX || p.pos.x),
@@ -1702,14 +1796,11 @@ function readLocalInput(p){
     ax: gp ? gp.x : p.pos.x, az: gp ? gp.z : p.pos.z,
     fire: !!mouse.down, dash: !!keys['Space'] };
 }
-// auth=true: authoritative sim (host/solo) — damage & effects real.
-// auth=false: guest prediction — movement + visual firing only.
 function simPlayer(p, inp, dt, auth){
   if(!p.alive) return;
   const wish = V3().addScaledVector(MOVE_UP, inp.iz).addScaledVector(MOVE_RIGHT, inp.ix);
   if(wish.lengthSq() > 0) wish.normalize();
   const adren = p.evos.adren && p.hp > 0 && p.hp/p.maxHp < 0.35;
-  // dash
   p.dashCd -= dt;
   if(p.hasDash && inp.dash && p.dashCd <= 0 && wish.lengthSq() > 0){
     p.dashCd = PL('phasedrive',p)>0 ? 3 : (PL('overdrive',p)>0 ? 4 : 6);
@@ -1738,17 +1829,14 @@ function simPlayer(p, inp, dt, auth){
   p.invulnT -= dt;
   p.pos.addScaledVector(p.vel, dt);
   collideWorld(p.pos, 1.2);
-  // body faces movement
   if(p.vel.lengthSq() > 1){
     p.bodyYaw += angDiff(p.bodyYaw, Math.atan2(p.vel.x, p.vel.z)) * Math.min(1, 12*dt);
   }
   p.mesh.rotation.y = p.bodyYaw;
-  // turret aims at input aim point
   const want = Math.atan2(inp.ax - p.pos.x, inp.az - p.pos.z);
   p.turretYaw += angDiff(p.turretYaw, want) * Math.min(1, p.turretSpeed*dt);
   p.mesh.userData.turret.rotation.y = angDiff(p.bodyYaw, p.turretYaw);
   p.mesh.position.copy(p.pos);
-  // firing
   p.fireT -= dt;
   if(inp.fire && p.fireT <= 0 && game.state === 'playing'){
     p.fireT = 1 / (p.fireRate * (adren ? 1.45 : 1));
@@ -1771,11 +1859,9 @@ function simPlayer(p, inp, dt, auth){
       }
     }
     AudioSys.shoot();
-    // muzzle flash
     burst(p.pos.x + Math.sin(p.turretYaw)*2.6, p.pos.z + Math.cos(p.turretYaw)*2.6, 0xffe066, 3, 3);
   }
   if(auth){
-    // EMP pulse (evolution)
     if(p.evos.emp){
       p.empT -= dt;
       if(p.empT <= 0){
@@ -1791,7 +1877,6 @@ function simPlayer(p, inp, dt, auth){
         }
       }
     }
-    // regen & shield
     if(p.regen > 0) p.hp = Math.min(p.maxHp, p.hp + p.regen*dt);
     if(p.maxShield > 0){
       if(p.shieldT > 0) p.shieldT -= dt;
@@ -1801,7 +1886,6 @@ function simPlayer(p, inp, dt, auth){
   }
   p.shieldMesh.visible = p.shield > 0.5;
 }
-// solo path — behavior identik seperti sebelumnya
 function updatePlayer(dt){ simPlayer(player, readLocalInput(player), dt, true); }
 
 /* ================= BULLET UPDATE ================= */
@@ -1812,9 +1896,16 @@ function updateBullets(dt){
     b.mesh.position.addScaledVector(b.vel, dt);
     const p = b.mesh.position;
     let dead = b.life <= 0 || Math.abs(p.x) > CFG.arenaHalf || Math.abs(p.z) > CFG.arenaHalf;
-    if(!dead) for(const o of obstacles){
+    if(!dead) for(let oi = 0; oi < obstacles.length; oi++){
+      const o = obstacles[oi];
+      if(o.dead || o.landed === false) continue; // hancur / masih jatuh dari langit
       const dx = p.x-o.x, dz = p.z-o.z;
-      if(dx*dx+dz*dz < o.r*o.r){ dead = true; burst(p.x, p.z, 0x8899bb, 3, 4); break; }
+      if(dx*dx+dz*dz < o.r*o.r){
+        dead = true;
+        if(b.friendly) damageObstacle(oi, b.dmg, p.x, p.z); // bangunan bisa hancur!
+        else burst(p.x, p.z, 0x8899bb, 3, 4);
+        break;
+      }
     }
     if(!dead){
       if(b.friendly){
@@ -1843,7 +1934,7 @@ function updateBullets(dt){
 
 /* ================= WAVES ================= */
 const game = { state: 'menu', wave: 0, kills0: 0, time: 0,
-               spawnQueue: [], spawnT: 0, boss: null, draftChoices: [] };
+               spawnQueue: [], spawnT: 0, boss: null, draftChoices: [], generating: false };
 function waveComp(n){
   const q = [];
   let budget = (4 + n*2.5)*budgetMulMP();
@@ -1874,16 +1965,16 @@ function startWave(n){
 TouchUI.setVisible(true);
   game.wave = n; game.state = 'playing';
   document.getElementById('wave-num').textContent = n >= CFG.maxWaves ? 'FINAL WAVE' : 'WAVE ' + n;
-  // Arena system (agent 05): theme + deterministic obstacle layout per wave
   if(game.runSeed === undefined) game.runSeed = 0;
   const ai = arenaForWave(game.wave);
   applyArenaTheme(ai);
   clearObstacleMeshes();
   obstacles.length = 0;
   obstacles.push(...genObstacleLayout(game.wave, ai, game.runSeed));
+  decorateObstacles();
   buildObstacleMeshes();
+  beginStageIntro(); // bangunan jatuh dari langit + "GENERATING WORLD", lalu spawn jalan
   if(isMP()){
-    // respawn dead teammates at 50% HP, spread spawn positions
     const spots = [[0,8],[7,-5],[-7,-5],[0,-13]];
     players.forEach((p, i) => {
       const s = spots[i % spots.length];
@@ -1894,17 +1985,11 @@ TouchUI.setVisible(true);
   } else {
     player.invulnT = Math.max(player.invulnT, 2); // spawn protection
   }
-  if(n >= CFG.maxWaves){
-    spawnBoss(n);
-  } else {
-    game.spawnQueue = waveComp(n);
-    game.spawnT = 0.5;
-    showBanner('WAVE ' + n, ARENAS[ai].name + (n===1 ? ' · selamat bertahan!' : ''));
-    AudioSys.wave();
-  }
+  // NOTE: spawn musuh/boss + banner wave dipindah ke finishStageIntro()
 }
 
 function updateWaves(dt){
+  if(game.generating) return; // animasi "GENERATING WORLD" — belum ada musuh, bukan wave clear
   if(game.spawnQueue.length > 0){
     game.spawnT -= dt;
     if(game.spawnT <= 0){
@@ -1918,7 +2003,6 @@ function updateWaves(dt){
     const anyAlive = enemies.some(e => e.active);
     if(!anyAlive){
       if(game.wave >= CFG.maxWaves){ victory(); return; }
-      // wave clear -> draft
       game.state = 'intermission';
       const bonus = 5 + game.wave*2;
       for(const p of players) p.scrap += bonus;
@@ -1931,11 +2015,9 @@ function updateWaves(dt){
           player.freeRerolls = meta.up.tact||0;
           if([3,6,9].includes(game.wave)) openEvoDraft(); else openDraft();
         }
-        // guest: waits for host draft message
       }, 1700);
     }
   }
-  // victory check after boss
   if(game.state === 'playing' && game.wave >= CFG.maxWaves && !game.boss){
     if(!enemies.some(e => e.active) && game.spawnQueue.length === 0) victory();
   }
@@ -1966,8 +2048,6 @@ function pickEvoChoices(p){
 }
 const serializeCard = (c, p) => ({ id:c.id, slot:c.slot, name:c.name, rarity:c.rarity, desc:c.desc, max:c.max, lvl:(p.parts[c.id]||0)+1 });
 const serializeEvo = c => ({ id:c.id, name:c.name, desc:c.desc });
-// Unified draft UI.
-// o: {title, sub, choices, evo, lvlOf(c), free(), scrap(), onReroll(done), onPick(id)}
 function showDraft(o){
   game.state = 'draft';
   document.getElementById('draft-title').textContent = o.title;
@@ -2113,7 +2193,6 @@ function checkDraftDone(){
   showBanner('WAVE ' + (game.wave+1), 'bersiap...');
   setTimeout(() => startWave(game.wave + 1), 1200);
 }
-// guest: draft/evo message from host
 function onDraftMsg(m){
   const evo = m.t === 'evo';
   showDraft({
@@ -2165,7 +2244,6 @@ function updateHUD(){
   if(!isGuest())
     document.getElementById('enemies-left').textContent = game.boss ? 'KALAHKAN DREADNOUGHT' : `sisa musuh: ${left}`;
   document.getElementById('scrap-num').textContent = player.scrap;
-  // low-HP vignette pulse
   const lowHp = player.alive && player.hp/player.maxHp < 0.3;
   document.getElementById('vignette').style.opacity =
     lowHp ? (0.55 + 0.35*Math.sin(performance.now()/220)) : 0;
@@ -2211,7 +2289,6 @@ TouchUI.setVisible(false);
   document.getElementById('hud').classList.add('hidden');
 }
 function onPlayerDeath(){
-  // called when ALL players are dead (host/solo authoritative)
   setTimeout(() => {
     game.state = 'gameover';
     const banked = player.scrap;
@@ -2252,7 +2329,6 @@ function renderLobbyList(list){
 }
 function netStatus(t){ document.getElementById('net-status').textContent = t || ''; }
 
-// ---------- HOST ----------
 function createRoom(){
   if(typeof Peer === 'undefined'){ netStatus('Gagal memuat PeerJS — cek koneksi internet.'); return; }
   const name = (document.getElementById('net-name').value.trim() || 'Host').slice(0,12);
@@ -2369,7 +2445,6 @@ function startMPGame(){
 }
 
 
-// ---------- GUEST ----------
 let lastSnapWave = -1; // agent 05: guest arena rebuild tracking
 
 function joinRoom(){
@@ -2417,6 +2492,7 @@ function onEventMsg(m){
   if(m.k === 'banner') showBanner(m.h, m.s);
   else if(m.k === 'draftEnd') document.getElementById('draft').classList.add('hidden');
   else if(m.k === 'parts'){ player.parts = m.parts || {}; player.evos = m.evos || {}; recomputeStats(player); }
+  else if(m.k === 'obst') destroyObstacle(m.i, true); // bangunan dihancurkan host
   else if(m.k === 'end'){
     const banked = player.scrap;
     meta.bank += banked; player.scrap = 0; saveMeta();
@@ -2448,7 +2524,6 @@ TouchUI.setVisible(true);
 }
 function onSnapshot(m){
   game.wave = m.w; game.state = m.st;
-  // agent 05: rebuild arena theme + obstacles on wave change (guest side mirrors host)
   if(m.w !== lastSnapWave){
     lastSnapWave = m.w;
     const gai = arenaForWave(m.w);
@@ -2456,11 +2531,12 @@ function onSnapshot(m){
     clearObstacleMeshes();
     obstacles.length = 0;
     obstacles.push(...genObstacleLayout(m.w, gai, game.runSeed));
+    decorateObstacles();
     buildObstacleMeshes();
+    beginStageIntro();
   }
 
   document.getElementById('wave-num').textContent = m.w >= CFG.maxWaves ? 'FINAL WAVE' : 'WAVE ' + m.w;
-  // players
   const seen = new Set();
   for(const a of m.p){
     const [id,x,z,byaw,tyaw,hp,mhp,alive,sh,scrap,ci] = a;
@@ -2495,7 +2571,6 @@ function onSnapshot(m){
   for(const [id, r] of Net.remote.players){
     if(!seen.has(id)){ scene.remove(r.mesh); Net.remote.players.delete(id); }
   }
-  // enemies
   const eseen = new Set();
   for(const a of m.e){
     const [id,type,x,z] = a;
@@ -2513,7 +2588,6 @@ function onSnapshot(m){
   for(const [id, r] of Net.remote.enemies){
     if(!eseen.has(id)){ scene.remove(r.mesh); Net.remote.enemies.delete(id); }
   }
-  // pickups
   const kseen = new Set();
   for(const a of m.k){
     const [id,kind,x,z] = a;
@@ -2531,13 +2605,11 @@ function onSnapshot(m){
   for(const [id, r] of Net.remote.pickups){
     if(!kseen.has(id)){ scene.remove(r.mesh); Net.remote.pickups.delete(id); }
   }
-  // shot events
   for(const s of m.sh){
     if(s[5] === Net.myId) continue; // echo of own shots
     spawnVBullet(s[0], s[1], s[2], s[3], s[4]===1);
     if(s[4]===1) AudioSys.enemyShoot(); else AudioSys.shoot();
   }
-  // boss bar
   const bw = document.getElementById('boss-bar-wrap');
   if(m.boss){
     bw.classList.remove('hidden');
@@ -2574,8 +2646,10 @@ function guestFrame(dt){
     try{ Net.conn.send({ t:'in', ix:inp.ix, iz:inp.iz, ax:r2(inp.ax), az:r2(inp.az), fire:inp.fire, dash:inp.dash }); }catch(e){}
   }
   if(game.state === 'playing') simPlayer(player, inp, dt, false);
+  if(game.generating) updateStageIntro(dt); // animasi "GENERATING WORLD" (visual lokal)
   guestInterp(dt);
   updateParticles(dt);
+  updateDebris(dt);
   updateDmgNums(dt);
   updateHUD();
 }
@@ -2601,6 +2675,7 @@ function frame(now){
   }
   if(game.state === 'playing'){
     game.time += dt;
+    if(game.generating) updateStageIntro(dt); // animasi bangunan jatuh (visual)
     acc += dt;
     while(acc >= STEP){
       if(isHost()){
@@ -2612,6 +2687,7 @@ function frame(now){
       updateEnemies(STEP);
       updateBullets(STEP);
       updateParticles(STEP);
+      updateDebris(STEP);
       updatePickups(STEP);
       updateWaves(STEP);
       updateDmgNums(STEP);
@@ -2630,6 +2706,7 @@ function frame(now){
     updateHUD();
   } else if(game.state === 'intermission' || game.state === 'draft'){
     updateParticles(dt); // biar ledakan tetap animasi saat draft
+    updateDebris(dt);
     updateDmgNums(dt);
   }
   updateCamera(dt);
@@ -2655,7 +2732,6 @@ document.getElementById('start-btn').onclick = () => {
   startWave(1);
 };
 document.getElementById('restart-btn').onclick = () => { applyArenaTheme(0); clearObstacleMeshes(); obstacles.length = 0; location.reload(); };
-// multiplayer menu wiring
 document.getElementById('btn-multi').onclick = () => {
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('net').classList.remove('hidden');
@@ -2669,8 +2745,6 @@ document.getElementById('btn-create').onclick = createRoom;
 document.getElementById('btn-join').onclick = joinRoom;
 document.getElementById('btn-leave').onclick = () => location.reload();
 document.getElementById('btn-start-mp').onclick = startMPGame;
-// Deterministic loopback self-test: in-page host + virtual guest via real WebRTC.
-// URL: ?selftest=1&room=CODE — reports PASS/FAIL in #selftest div and document.title.
 function runSelfTest(){
   const qs = new URLSearchParams(location.search);
   const code = (qs.get('room') || 'SELFTEST').toUpperCase();
@@ -2756,7 +2830,6 @@ function runSelfTest(){
           say(moved > 2, `${G.name}: moved by host sim (d=${moved.toFixed(1)})`);
           say(G.sawShot, `${G.name}: bullets spawned by host sim`);
         });
-        // kill guest 2 (if present), then run the real draft orchestration
         let victim = null, victimName = '';
         if(guests.length > 1){
           victim = guests[1].p; victimName = guests[1].name;
@@ -2793,12 +2866,6 @@ function runSelfTest(){
   }, 30000);
 }
 if(new URLSearchParams(location.search).get('selftest')) setTimeout(runSelfTest, 1500);
-// Agent 10 — automated touch-input self-test. URL: ?touchtest=1
-// Mirrors runSelfTest reporting: green #touchtest box + document.title TOUCHTEST: PASS/FAIL.
-// No game run needed: dispatches synthetic TouchEvents on document and asserts
-// TouchUI state + readLocalInput output. Depends on patches 06 (TouchUI core +
-// left joystick listeners), 07 (right-half aim/fire listeners), 08 (#btn-dash).
-// Each step FAILs loudly if its dependency is missing.
 function runTouchTest(){
   const out = [];
   const el = document.createElement('div');
@@ -2817,9 +2884,6 @@ function runTouchTest(){
   };
   render();
   const W = window.innerWidth, H = window.innerHeight;
-  // Spec coordinates are (100,600) left / (700,400) right; clamp into the correct
-  // half so the test stays valid on viewports wider than 1400px (agent 07 uses
-  // clientX >= innerWidth/2 for the right-half aim zone).
   const LX = Math.min(100, Math.floor(W / 2) - 50);
   const LY = Math.min(600, H - 60);
   const RX = Math.max(700, Math.ceil(W / 2) + 50);
@@ -2845,7 +2909,6 @@ function runTouchTest(){
     try{ fn(); }catch(e){ say(false, name + ': exception ' + ((e && e.message) || e)); }
   };
 
-  // (a) left-half dynamic joystick: press, drag right, release
   step('move', () => {
     fireTouch('touchstart', [mkTouch(1, LX, LY)]);
     fireTouch('touchmove', [mkTouch(1, LX + 60, LY)]);
@@ -2855,7 +2918,6 @@ function runTouchTest(){
       `joystick released -> moveX=${TouchUI.moveX}, moveZ=${TouchUI.moveZ} (both 0)`);
   });
 
-  // (b) right-half touch: aim + auto-fire while held
   step('fire', () => {
     fireTouch('touchstart', [mkTouch(2, RX, RY)]);
     say(TouchUI.firing === true, `right touch -> firing=${TouchUI.firing} (true)`);
@@ -2863,7 +2925,6 @@ function runTouchTest(){
     say(TouchUI.firing === false, `right released -> firing=${TouchUI.firing} (false)`);
   });
 
-  // (c) dash button
   step('dash', () => {
     const btn = document.getElementById('btn-dash');
     if(!btn){ say(false, '#btn-dash not found — patch 08 (touch buttons) not integrated'); return; }
@@ -2874,7 +2935,6 @@ function runTouchTest(){
     fireTouch('touchend', [mkTouch(3, cx, cy)], btn);
   });
 
-  // (d) readLocalInput integration: left drag held + right touch held (multi-touch)
   step('input', () => {
     fireTouch('touchstart', [mkTouch(4, LX, LY)]);
     fireTouch('touchmove', [mkTouch(4, LX + 70, LY)]);
@@ -2887,7 +2947,6 @@ function runTouchTest(){
     say(TouchUI.firing === false && TouchUI.moveX === 0, 'touches released -> firing=false, moveX=0');
   });
 
-  // (e) auto-aim mobile: musuh terdekat -> ax/az mengarah ke musuh; tanpa musuh -> fallback aim manual
   step('auto-aim', () => {
     TouchUI.aimX = 0; TouchUI.aimZ = 0;
     enemies.push({ active:true, pos:{ x: 12, z: -7 } });
@@ -2900,7 +2959,6 @@ function runTouchTest(){
       `tanpa musuh -> fallback ax=${inpNoE.ax}, az=${inpNoE.az} (0, 0)`);
   });
 
-  // (f) dash baseline + tombol fullscreen
   step('dash+fullscreen', () => {
     recomputeStats(player);
     say(player.hasDash === true, `hasDash=${player.hasDash} (true, tanpa Overdrive)`);
