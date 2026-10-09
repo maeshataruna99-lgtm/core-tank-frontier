@@ -2,7 +2,7 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Rogue Tank Survival 3D</title>
 <style>
   html, body { margin: 0; padding: 0; overflow: hidden; background: #0b0e14;
@@ -134,6 +134,81 @@
   .mate .mhp { width: 70px; height: 7px; background: #222b40; border-radius: 4px; overflow: hidden; }
   .mate .mhp i { display: block; height: 100%; background: #52e07a; }
   .mate.dead { opacity: .45; }
+/* ---- BEGIN <style> CSS (Agent 09: touch controls + responsive HUD) ---- */
+
+/* Touch: kill pull-to-refresh / pinch-zoom / double-tap-zoom gestures page-wide.
+   NOTE: this also disables touch scrolling inside overlays (e.g. #menu's
+   meta panel uses overflow-y:auto). If menu scrolling is needed on touch,
+   agent 10 / integrator can add `#menu { touch-action: pan-y; }`. */
+html, body { touch-action: none; overscroll-behavior: none; }
+#game-canvas { touch-action: none; }
+
+/* Hidden by default; TouchUI.setVisible (agent 06) toggles inline display
+   to show touch controls only on touch devices. */
+.touch-only { display: none; }
+
+/* Dynamic left joystick (HTML created by agent 06; positioned via JS at touch point) */
+#touch-joy { position: fixed; width: 120px; height: 120px;
+  border: 2px solid rgba(255,211,77,.5); border-radius: 50%;
+  pointer-events: none; z-index: 40; }
+#touch-knob { position: absolute; left: 35px; top: 35px; width: 50px; height: 50px;
+  background: rgba(255,211,77,.75); border-radius: 50%; }
+
+/* Round overlay buttons (created by agent 08): DASH + MUTE */
+.tc-btn { position: fixed; z-index: 41; min-width: 72px; min-height: 72px;
+  border-radius: 50%; font-size: 15px; font-weight: 700;
+  background: rgba(20,26,38,.72); color: #ffd34d;
+  border: 2px solid rgba(255,211,77,.55); }
+#btn-dash { right: 26px; bottom: 110px; }
+#btn-mute-touch { right: 26px; top: 76px; min-width: 52px; min-height: 52px; font-size: 13px; }
+
+/* ---- Responsive HUD for narrow screens (phones) ---- */
+@media (max-width: 700px) {
+  /* Menu */
+  #menu h1 { font-size: 34px; letter-spacing: 2px; }
+  #menu h2 { font-size: 14px; }
+  .btn { padding: 12px 30px; font-size: 16px; }
+  .controls-hint { font-size: 12px; }
+  #meta-panel { width: 92vw; padding: 10px 14px 12px; }
+
+  /* HUD */
+  #hp-wrap { width: 200px; top: 10px; left: 10px; }
+  #hp-text { font-size: 11px; }
+  #wave-num { font-size: 20px; letter-spacing: 2px; }
+  #enemies-left { font-size: 11px; }
+  #boss-bar-wrap { width: 70vw; }
+  #scrap-info { font-size: 16px; top: 10px; right: 12px; }
+  #team { top: 64px; left: 10px; }
+  .mate { font-size: 11px; padding: 4px 8px; }
+  .mate .mhp { width: 52px; }
+  #parts-bar { bottom: 10px; left: 10px; max-width: 56vw; }
+  .part-chip { font-size: 10px; padding: 3px 7px; }
+  /* Keyboard hint is meaningless on touch; touch has its own mute button (agent 08) */
+  #mute-hint { display: none; }
+
+  /* Banner */
+  #banner h1 { font-size: 34px; letter-spacing: 4px; }
+  #banner p { font-size: 13px; }
+
+  /* Draft cards: smaller + wrap so 3 cards fit narrow screens */
+  #draft h1 { font-size: 24px; }
+  #draft .sub { font-size: 13px; margin-bottom: 16px; }
+  #cards { gap: 10px; flex-wrap: wrap; justify-content: center; max-width: 94vw; }
+  .card { width: 150px; padding: 14px 10px; }
+  .card .name { font-size: 15px; margin: 8px 0; }
+  .card .desc { font-size: 12px; min-height: 54px; }
+  .card .lvl { font-size: 12px; }
+  #reroll-btn { font-size: 13px; padding: 8px 20px; margin-top: 16px; }
+
+  /* Game over / victory */
+  #end h1 { font-size: 36px; letter-spacing: 3px; }
+  #end .stats { font-size: 14px; }
+
+  /* Lobby */
+  .lobby-p { font-size: 15px; }
+  #lobby-code b { font-size: 22px; }
+}
+/* ---- END <style> CSS (Agent 09) ---- */
 </style>
 <script type="importmap">
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js" } }
@@ -160,6 +235,10 @@
 </div>
 
 <div id="banner"><h1 id="banner-title"></h1><p id="banner-sub"></p></div>
+<button id="btn-dash" class="touch-only tc-btn">DASH</button>
+<button id="btn-mute-touch" class="touch-only tc-btn">SUARA</button>
+
+// ---- JS: insert AFTER the anchor line (end of INPUT section) ----
 
 <div id="menu" class="overlay">
   <h1>ROGUE TANK</h1>
@@ -274,40 +353,128 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0e14);
 scene.fog = new THREE.Fog(0x0b0e14, 60, 140);
 
-scene.add(new THREE.HemisphereLight(0xbdd3ff, 0x1a2030, 0.9));
+// SNIPPET 1 — beri nama pada HemisphereLight + deklarasikan worldMats.
+// Material grid diisi di blok Ground (snippet 2); obstacle/obstacleTop dipakai
+// agen 03 untuk mesh obstacle dinamis.
+const hemi = new THREE.HemisphereLight(0xbdd3ff, 0x1a2030, 0.9);
+scene.add(hemi);
+// Shared world materials — diwarnai ulang per arena oleh applyArenaTheme().
+// worldMats.grid adalah LineBasicMaterial milik GridHelper (vertexColors aktif),
+// diwarnai via .color (menjadi tint di atas vertex colors putih/abu bawaan).
+const worldMats = {
+  ground: new THREE.MeshLambertMaterial({ color: 0x11161f }),
+  grid: null, // diisi di blok Ground di bawah
+  wall: new THREE.MeshLambertMaterial({ color: 0x2b3a55 }),
+  obstacle: new THREE.MeshLambertMaterial({ color: 0x3a4a68 }),
+  obstacleTop: new THREE.MeshLambertMaterial({ color: 0x4a5c80 }),
+};
 const sun = new THREE.DirectionalLight(0xfff2d9, 1.6);
 sun.position.set(30, 50, 15);
 scene.add(sun);
 
+// SNIPPET 2 — blok Ground memakai worldMats.ground + worldMats.grid.
+// GridHelper dibuat dengan vertex colors putih/abu agar satu tint (gridA)
+// menghasilkan tampilan two-tone yang konsisten di semua tema.
 // Ground
 {
   const g = new THREE.Mesh(
     new THREE.PlaneGeometry(CFG.arenaHalf*2+14, CFG.arenaHalf*2+14),
-    new THREE.MeshLambertMaterial({ color: 0x11161f })
+    worldMats.ground
   );
   g.rotation.x = -Math.PI/2; scene.add(g);
-  const grid = new THREE.GridHelper(CFG.arenaHalf*2, CFG.arenaHalf, 0x2a3348, 0x1a2233);
+  const grid = new THREE.GridHelper(CFG.arenaHalf*2, CFG.arenaHalf, 0xffffff, 0x8c8c8c);
+  worldMats.grid = grid.material;
   grid.position.y = 0.02; scene.add(grid);
 }
-// Arena walls (visual)
+// SNIPPET 3 — blok dinding arena memakai worldMats.wall agar bisa di-tema.
+// Arena walls (visual) — material dishare via worldMats.wall untuk tema arena
 {
-  const H = CFG.arenaHalf, wallMat = new THREE.MeshLambertMaterial({ color: 0x2b3a55 });
-  const mk = (w,d,x,z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,2.5,d), wallMat);
+  const H = CFG.arenaHalf;
+  const mk = (w,d,x,z) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w,2.5,d), worldMats.wall);
     m.position.set(x,1.25,z); scene.add(m); };
   mk(H*2+4, 2, 0, -H-1); mk(H*2+4, 2, 0, H+1);
   mk(2, H*2+4, -H-1, 0); mk(2, H*2+4, H+1, 0);
 }
-// Obstacles (circle colliders)
+// (Replace from the line above through the block's closing `}` — the line
+// containing only `}` immediately before the blank line preceding
+// `// Isometric camera rig`.)
+
+// Obstacles (circle colliders) — DYNAMIC pooled meshes (agent 03).
+// The live collider data. collideWorld() and updateBullets() read this array.
+// NOTE (agent 05): this is `const` — mutate in place
+//   (obstacles.length = 0; obstacles.push(...genObstacleLayout(...))).
 const obstacles = [];
+
+// Pooled meshes: 16 obstacle bodies (shared unit-box geometry) + 16 thin
+// top-face accent boxes. Pooling avoids per-wave geometry/material churn.
+const obstaclePool = [];
+const obstacleTopPool = [];
 {
-  const spots = [[-14,-10,2.6],[12,-14,3.2],[-10,12,3.0],[14,10,2.4],[0,-2,2.2],[-2,20,2.6],[18,-2,2.2]];
-  const mat = new THREE.MeshLambertMaterial({ color: 0x3a4a68 });
-  for(const [x,z,r] of spots){
-    const m = new THREE.Mesh(new THREE.BoxGeometry(r*1.7, 3, r*1.7), mat);
-    m.position.set(x, 1.5, z); scene.add(m);
-    obstacles.push({ x, z, r });
+  const geo = new THREE.BoxGeometry(1, 1, 1);
+  const bodyMat = (typeof worldMats !== 'undefined' && worldMats.obstacle)
+    || new THREE.MeshLambertMaterial({ color: 0x3a4a68 });
+  const topMat = (typeof worldMats !== 'undefined' && worldMats.obstacleTop)
+    || new THREE.MeshLambertMaterial({ color: 0x55688f });
+  for(let i = 0; i < 16; i++){
+    const m = new THREE.Mesh(geo, bodyMat);
+    m.visible = false;
+    scene.add(m);
+    obstaclePool.push(m);
+    const t = new THREE.Mesh(geo, topMat);
+    t.visible = false;
+    scene.add(t);
+    obstacleTopPool.push(t);
   }
 }
+
+// Deterministic height in [2.5, 4.2] from the obstacle index (no Math.random).
+function obstacleHeight(i){
+  const h = Math.sin(i * 127.1 + 311.7) * 43758.5453;
+  return 2.5 + (h - Math.floor(h)) * 1.7;
+}
+
+// Rebuild pooled meshes from the live `obstacles` array.
+// Materials are re-resolved here so agent 01's applyArenaTheme() recoloring
+// (per-wave) is picked up whenever agent 05 calls this after theming.
+function buildObstacleMeshes(){
+  const bodyMat = (typeof worldMats !== 'undefined' && worldMats.obstacle) || obstaclePool[0].material;
+  const topMat = (typeof worldMats !== 'undefined' && worldMats.obstacleTop) || obstacleTopPool[0].material;
+  for(let i = 0; i < obstaclePool.length; i++){
+    const m = obstaclePool[i];
+    const t = obstacleTopPool[i];
+    if(i < obstacles.length){
+      const o = obstacles[i];
+      const h = obstacleHeight(i);
+      m.material = bodyMat;
+      m.visible = true;
+      m.scale.set(o.r * 1.7, h, o.r * 1.7);
+      m.position.set(o.x, h / 2, o.z);
+      // Subtle top-face accent: thin inset slab resting on the body.
+      t.material = topMat;
+      t.visible = true;
+      t.scale.set(o.r * 1.7 * 0.96, 0.22, o.r * 1.7 * 0.96);
+      t.position.set(o.x, h + 0.11, o.z);
+    } else {
+      m.visible = false;
+      t.visible = false;
+    }
+  }
+}
+
+function clearObstacleMeshes(){
+  for(const m of obstaclePool) m.visible = false;
+  for(const t of obstacleTopPool) t.visible = false;
+}
+
+// Default menu-backdrop layout: the classic 7 obstacles, so the main menu
+// keeps its current arena look until agent 05 wires per-wave layouts in
+// startWave() (which will overwrite `obstacles` and call buildObstacleMeshes()).
+obstacles.push(
+  { x:-14, z:-10, r:2.6 }, { x:12, z:-14, r:3.2 }, { x:-10, z:12, r:3.0 },
+  { x:14, z:10, r:2.4 }, { x:0, z:-2, r:2.2 }, { x:-2, z:20, r:2.6 },
+  { x:18, z:-2, r:2.2 }
+);
+buildObstacleMeshes();
 
 // Isometric camera rig
 const ISO_D = 24;
@@ -338,6 +505,9 @@ function updateCamera(dt){
   camera.lookAt(camTarget.x, 0, camTarget.z);
 }
 function addShake(s){ shake = Math.min(2.2, shake + s); }
+// SNIPPET 4 — sisipkan section ARENA THEMES setelah resize listener (akhir WORLD).
+// Berisi: data 5 tema, arenaForWave, applyArenaTheme, + sinkronisasi awal.
+// Listener resize asli dipertahankan verbatim di bawah.
 addEventListener('resize', () => {
   camAspect = innerWidth/innerHeight;
   camera.left = -ISO_D*camAspect; camera.right = ISO_D*camAspect;
@@ -346,7 +516,80 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
+/* ================= ARENA THEMES (agen 01) ================= */
+// 5 tema visual arena. Nilai default tema [0] RERUNTUHAN BAJA sama persis dengan
+// warna hardcoded sebelum refactor, sehingga tampilan awal tidak berubah.
+const ARENAS = [
+  { name: 'RERUNTUHAN BAJA',
+    ground: 0x11161f, gridA: 0x2a3348, gridB: 0x1a2233,
+    fog: 0x0b0e14, bg: 0x0b0e14,
+    wall: 0x2b3a55, obstacle: 0x3a4a68, obstacleTop: 0x4a5c80,
+    hemiSky: 0xbdd3ff, hemiGround: 0x1a2030, sun: 0xfff2d9,
+    fogNear: 60, fogFar: 140 },
+  { name: 'GURUN SENJA',
+    ground: 0x241610, gridA: 0x9a6234, gridB: 0x5f3d22,
+    fog: 0x38190e, bg: 0x241009,
+    wall: 0x6e4a2c, obstacle: 0x7d5a38, obstacleTop: 0xa87c4c,
+    hemiSky: 0xffb36b, hemiGround: 0x3a2416, sun: 0xff8a3d,
+    fogNear: 55, fogFar: 130 },
+  { name: 'KUTUB ES',
+    ground: 0x18242f, gridA: 0x6fb3d8, gridB: 0x3d6a8a,
+    fog: 0x7ba8c4, bg: 0x0e1826,
+    wall: 0x446078, obstacle: 0x506e88, obstacleTop: 0x8ac0dc,
+    hemiSky: 0xd6efff, hemiGround: 0x24333f, sun: 0xeaf6ff,
+    fogNear: 65, fogFar: 150 },
+  { name: 'RAWA NEON',
+    ground: 0x0d1712, gridA: 0x2bffa0, gridB: 0x1a7a58,
+    fog: 0x0d2a1c, bg: 0x08120d,
+    wall: 0x1c4a38, obstacle: 0x2a5c46, obstacleTop: 0x3cffa8,
+    hemiSky: 0x86ffd2, hemiGround: 0x0c1c14, sun: 0x5cffb4,
+    fogNear: 50, fogFar: 120 },
+  { name: 'KAWAH VULKANIK',
+    ground: 0x1c100c, gridA: 0xd84e2c, gridB: 0x7a2c1c,
+    fog: 0x2c100a, bg: 0x120a08,
+    wall: 0x4e261b, obstacle: 0x5e3224, obstacleTop: 0xe0642c,
+    hemiSky: 0xffa06e, hemiGround: 0x2c1410, sun: 0xff5e2e,
+    fogNear: 55, fogFar: 125 },
+];
+
+// Progresi tier: tema berganti tiap 2 wave agar pemain merasakan eskalasi
+// tanpa visual whiplash di tengah run. Wave 1-2, 3-4, 5-6, 7-8, 9-10.
+// Wave 10 (boss DREADNOUGHT) selalu KAWAH VULKANIK sebagai finale klimaks.
+function arenaForWave(w){
+  return Math.min(ARENAS.length - 1, Math.floor((w - 1) / 2));
+}
+
+// Terapkan tema arena: background, fog, semua worldMats, hemisphere + sun.
+// Mengembalikan objek tema (dipakai agen 05 untuk banner nama arena).
+// Catatan: dipanggil juga oleh guest (agen 05) saat wave berubah agar
+// guest melihat tema yang sama dengan host (host-authoritative).
+function applyArenaTheme(i){
+  const t = ARENAS[Math.max(0, Math.min(ARENAS.length - 1, i))];
+  scene.background.set(t.bg);
+  scene.fog.color.set(t.fog);
+  scene.fog.near = t.fogNear;
+  scene.fog.far = t.fogFar;
+  worldMats.ground.color.set(t.ground);
+  if(worldMats.grid) worldMats.grid.color.set(t.gridA);
+  worldMats.wall.color.set(t.wall);
+  worldMats.obstacle.color.set(t.obstacle);
+  worldMats.obstacleTop.color.set(t.obstacleTop);
+  hemi.color.set(t.hemiSky);
+  hemi.groundColor.set(t.hemiGround);
+  sun.color.set(t.sun);
+  return t;
+}
+
+// Sinkronisasi awal: jadikan ARENAS satu-satunya sumber kebenaran warna.
+applyArenaTheme(0);
+
 /* ================= INPUT ================= */
+// DIRECTION: insert-after (register right after the INPUT section header).
+// Non-passive guard: prevents pull-to-refresh / page scroll gestures while
+// playing on touch devices. Menus (state != 'playing') keep default behavior.
+// `game` is defined earlier in the module (CONFIG/WORLD sections); state is
+// read at event time, so registration order is safe.
+document.addEventListener('touchmove', e => { if(game.state==='playing') e.preventDefault(); }, { passive:false });
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
@@ -362,6 +605,170 @@ addEventListener('mousemove', e => {
 addEventListener('mousedown', e => { if(e.button===0) mouse.down = true; AudioSys.init(); });
 addEventListener('mouseup', e => { if(e.button===0) mouse.down = false; });
 addEventListener('contextmenu', e => e.preventDefault());
+function initTouchButtons(){
+  if(typeof TouchUI === 'undefined') return; // agent 06 not applied — skip wiring
+  const dashBtn = document.getElementById('btn-dash');
+  const muteBtn = document.getElementById('btn-mute-touch');
+  if(!dashBtn || !muteBtn) return;
+
+  const setMuteLabel = () => { muteBtn.textContent = AudioSys.muted ? 'SUARA OFF' : 'SUARA ON'; };
+  setMuteLabel();
+
+  // DASH: hold to dash (mirrors Space on desktop; agent 10 reads TouchUI.dash)
+  dashBtn.addEventListener('touchstart', e => {
+    e.preventDefault(); // stop synthetic mouse/click + document aim handlers
+    TouchUI.dash = true;
+    dashBtn.classList.add('active');
+  }, { passive: false });
+  const dashEnd = e => {
+    e.preventDefault();
+    TouchUI.dash = false;
+    dashBtn.classList.remove('active');
+  };
+  dashBtn.addEventListener('touchend', dashEnd, { passive: false });
+  dashBtn.addEventListener('touchcancel', dashEnd, { passive: false });
+
+  // MUTE: tap toggles sound (mirrors KeyM on desktop)
+  muteBtn.addEventListener('touchstart', e => {
+    e.preventDefault();
+    AudioSys.init(); // unlock audio on first touch, like mousedown does
+    AudioSys.muted = !AudioSys.muted;
+    setMuteLabel();
+  }, { passive: false });
+}
+// NOTE: initTouchButtons() is NOT self-invoked here; the integrator (agent 10)
+// calls it once at boot alongside the other touch init functions.
+/* ================= TOUCH CORE (agent 06) ================= */
+// Left-half dynamic virtual joystick. Right-half touches are agent 07 (aim).
+// Agent 10 consumes TouchUI.moveX/moveZ in readLocalInput; agent 08 owns TouchUI.dash.
+function isTouchDevice(){ return ('ontouchstart' in window) || navigator.maxTouchPoints > 0; }
+const TouchUI = { active:false, visible:false, joyId:null, joyOX:0, joyOY:0,
+  moveX:0, moveZ:0, aimX:0, aimZ:0, firing:false, dash:false,
+  setVisible(v){ this.visible=v; document.querySelectorAll('.touch-only').forEach(e=>e.style.display=(v&&this.active)?'':'none'); } };
+// Agent 07 — right-side touch aim + fire.
+// Depends on agent 06 (TouchUI object + setVisible). Integrator applies 06 before 07.
+
+let aimId = null; // identifier of the touch currently driving aim/fire, null = none
+
+// Raycast from explicit client (pixel) coordinates onto the y=0 ground plane.
+// Same math as groundPointFromMouse() but does NOT read or mutate the global
+// mouse object; camera is the existing global.
+function groundPointFromScreen(cx, cy){
+  const ndc = new THREE.Vector2((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
+  const rc = new THREE.Raycaster();
+  rc.setFromCamera(ndc, camera);
+  const o = rc.ray.origin, d = rc.ray.direction;
+  if(Math.abs(d.y) < 1e-5) return null;
+  const t = -o.y / d.y;
+  if(t < 0) return null;
+  return V3(o.x + d.x * t, 0, o.z + d.z * t);
+}
+
+// Touches starting on UI chrome (buttons, inputs, panels, touch buttons, the
+// left-side joystick zone of agent 06) must not become aim touches.
+// Mirrors the ignore check of agent 06's handlers; keep the two aligned.
+function touchIsOnUI(e){
+  const t = e.target;
+  return !!(t && t.closest && t.closest('button, input, #menu, #net, #draft, #meta-panel, #end, .touch-btn, .joystick'));
+}
+
+function initTouchAim(){
+  document.addEventListener('touchstart', e => {
+    if(!TouchUI.active || !TouchUI.visible) return;
+    if(touchIsOnUI(e)) return;
+    for(const t of e.changedTouches){
+      if(aimId === null && t.clientX >= innerWidth / 2){
+        aimId = t.identifier;
+        const gp = groundPointFromScreen(t.clientX, t.clientY);
+        if(gp){ TouchUI.aimX = gp.x; TouchUI.aimZ = gp.z; }
+        TouchUI.firing = true;
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  document.addEventListener('touchmove', e => {
+    if(!TouchUI.active || aimId === null) return;
+    for(const t of e.changedTouches){
+      if(t.identifier === aimId){
+        const gp = groundPointFromScreen(t.clientX, t.clientY);
+        if(gp){ TouchUI.aimX = gp.x; TouchUI.aimZ = gp.z; }
+        e.preventDefault();
+      }
+    }
+  }, { passive: false });
+
+  const releaseAim = e => {
+    for(const t of e.changedTouches){
+      if(t.identifier === aimId){
+        aimId = null;
+        TouchUI.firing = false;
+      }
+    }
+  };
+  document.addEventListener('touchend', releaseAim);
+  document.addEventListener('touchcancel', releaseAim);
+}
+// NOTE: initTouchAim() is NOT self-invoked here; the integrator (agent 10)
+// calls it once at boot alongside the other touch init functions.
+// NOTE: TouchUI.aimX/aimZ start at 0 (from agent 06's literal). Agent 10's
+// readLocalInput hook treats a missing/stale aim as "aim at/near the player",
+// so no per-run reset is needed in this section.
+
+function initTouchUI(){
+  if(!isTouchDevice()) return;
+  TouchUI.active = true;
+  const JOY_R = 60; // px: stick radius mapping to full deflection; base is 2*JOY_R wide
+  const joy = document.createElement('div');
+  joy.id = 'touch-joy';
+  joy.className = 'touch-only joystick'; // .joystick: excluded from aim touches by agent 07
+  joy.style.display = 'none';            // hidden by default (CSS by agent 09 is the other half)
+  const knob = document.createElement('div');
+  knob.id = 'touch-knob';
+  joy.appendChild(knob);
+  document.body.appendChild(joy);
+  const onEnd = (e) => {
+    for(const t of e.changedTouches){
+      if(t.identifier === TouchUI.joyId){
+        TouchUI.joyId = null;
+        TouchUI.moveX = 0; TouchUI.moveZ = 0;
+        joy.style.display = 'none';
+      }
+    }
+  };
+  // NOTE: listeners on DOCUMENT (not canvas) so synthetic TouchEvents in tests are received.
+  document.addEventListener('touchstart', (e) => {
+    if(!TouchUI.active || !TouchUI.visible) return;
+    for(const t of e.changedTouches){
+      if(TouchUI.joyId !== null) break;             // single joystick
+      if(t.clientX >= window.innerWidth/2) continue; // right half: agent 07 (aim)
+      const tgt = e.target;
+      if(tgt && tgt.closest && tgt.closest('button, input, textarea, select, .overlay:not(.hidden)')) continue;
+      TouchUI.joyId = t.identifier;
+      TouchUI.joyOX = t.clientX; TouchUI.joyOY = t.clientY;
+      joy.style.left = (t.clientX - JOY_R) + 'px';
+      joy.style.top = (t.clientY - JOY_R) + 'px';
+      joy.style.display = 'block';
+      knob.style.transform = 'translate(0px, 0px)';
+    }
+  }, { passive: true });
+  document.addEventListener('touchmove', (e) => {
+    if(!TouchUI.active || TouchUI.joyId === null) return;
+    for(const t of e.changedTouches){
+      if(t.identifier !== TouchUI.joyId) continue;
+      let dx = (t.clientX - TouchUI.joyOX) / JOY_R;
+      let dy = (t.clientY - TouchUI.joyOY) / JOY_R;
+      const len = Math.hypot(dx, dy);
+      if(len > 1){ dx /= len; dy /= len; }
+      TouchUI.moveX = dx;   // +1 = right  (matches ix from KeyD)
+      TouchUI.moveZ = -dy;  // +1 = up     (matches iz from KeyW)
+      knob.style.transform = 'translate(' + (dx*40).toFixed(1) + 'px,' + (dy*40).toFixed(1) + 'px)';
+    }
+    if(e.cancelable) e.preventDefault();
+  }, { passive: false });
+  document.addEventListener('touchend', onEnd, { passive: true });
+  document.addEventListener('touchcancel', onEnd, { passive: true });
+}
 // Screen-relative move basis (camera looks along -(1,1.35,1))
 const MOVE_UP = V3(-1,0,-1).normalize();    // W
 const MOVE_RIGHT = V3(1,0,-1).normalize(); // D
@@ -811,6 +1218,9 @@ function spawnPickup(x, z, kind){
   p.id = ++Net.kid;
   p.mesh.material = kind==='scrap' ? scrapMat : repairMat;
   p.mesh.position.set(clamp(x,-28,28), 0.6, clamp(z,-28,28));
+// (di dalam spawnPickup; radius kecil karena pickup hanya perlu di luar obstacle.)
+{ const _sp04 = resolveSpawnFromObstacles(p.mesh.position.x, p.mesh.position.z, 0.5);
+  p.mesh.position.x = _sp04.x; p.mesh.position.z = _sp04.z; }
 }
 function updatePickups(dt){
   for(const p of pickups){
@@ -890,6 +1300,11 @@ function spawnEnemy(type, x, z, waveMul){
   e.mesh.visible = true;
   e.mesh.userData.bodyMat.color.setHex(t.color);
   e.mesh.position.set(x, 0, z);
+// (di dalam spawnEnemy; e.r sudah di-set beberapa baris sebelumnya.
+//  e.pos = e.mesh.position di baris berikut me-alias Vector3 yang sama,
+//  jadi mutasi di sini ikut terbawa.)
+{ const _sp04 = resolveSpawnFromObstacles(e.mesh.position.x, e.mesh.position.z, e.r);
+  e.mesh.position.x = _sp04.x; e.mesh.position.z = _sp04.z; }
   e.pos = e.mesh.position;
   e.turretYaw = 0; e.fireT = rand(1,2.4); e.contactT = 0; e.flashT = 0; e.stun = 0;
   e.wob = rand(0,TAU);
@@ -1019,6 +1434,10 @@ function spawnBoss(waveMul){
   e.mesh.userData.bodyMat.color.setHex(0x8f1d22);
   e.mesh.scale.set(2.1, 2.1, 2.1);
   e.mesh.position.set(0, 0, -20); e.pos = e.mesh.position;
+// (di dalam spawnBoss; e.r = 2.2 sudah di-set baris sebelumnya.
+//  Boss summon attack memanggil spawnEnemy -> otomatis ikut ter-resolve.)
+{ const _sp04 = resolveSpawnFromObstacles(e.mesh.position.x, e.mesh.position.z, e.r);
+  e.mesh.position.x = _sp04.x; e.mesh.position.z = _sp04.z; }
   e.turretYaw = 0; e.atkT = 2.5; e.atkMode = 0; e.flashT = 0; e.contactT = 0; e.wob = 0; e.stun = 0;
   game.boss = e;
   document.getElementById('boss-bar-wrap').classList.remove('hidden');
@@ -1082,6 +1501,126 @@ function onBossDeath(){
 }
 
 /* ================= WORLD COLLISION ================= */
+/* ================= OBSTACLE LAYOUT GEN (Agent 02 — pure/deterministic) =================
+   Deterministic circle-obstacle layout generator. No Math.random, no THREE, no DOM.
+   Contract: genObstacleLayout(wave, arenaIdx, runSeed) -> [{x, z, r}]
+   - Called by agent 05 as genObstacleLayout(wave, arenaIdx, game.runSeed).
+   - Rendered by agent 03 from the global `obstacles` array; collideWorld() reads it.
+   Layout styles by arenaIdx (all 5 implemented):
+     0 = scattered clusters (2-3 blobs), 1 = pillar rows (2 horizontal rows),
+     2 = ring around center, 3 = symmetric cross/plus, 4 = dense random scatter. */
+function mulberry32(seed){
+  let a = seed >>> 0;
+  return function(){
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// MP spawn spots (same as startWave) — keep-clear radius 7 around each.
+const OBSTACLE_KEEP_SPAWNS = [[0,8],[7,-5],[-7,-5],[0,-13]];
+const OBSTACLE_KEEP_SPAWN_R2 = 49;   // 7^2
+const OBSTACLE_KEEP_CENTER_R2 = 25;  // 5^2 around (0,0)
+const OBSTACLE_MIN_GAP = 2.5;        // extra separation between obstacles
+const OBSTACLE_MAX_TRIES = 200;      // rejection-sample attempts per obstacle
+
+function genObstacleLayout(wave, arenaIdx, runSeed){
+  wave = Math.max(1, wave | 0);
+  arenaIdx = arenaIdx | 0;
+  const seedMix = ((runSeed | 0) ^ Math.imul(wave + 1, 0x9E3779B1) ^ Math.imul(arenaIdx + 11, 0x85EBCA6B)) >>> 0;
+  const rng = mulberry32(seedMix);
+  const H = CFG.arenaHalf - 4; // clamp bound (26 when arenaHalf = 30)
+  const count = Math.min(4 + Math.floor(wave * 0.8), 12);
+  const style = ((arenaIdx % 5) + 5) % 5;
+  const out = [];
+  const rad = () => 1.8 + rng() * 1.6; // r in [1.8, 3.4]
+
+  function clearOf(x, z, r){
+    for(const s of OBSTACLE_KEEP_SPAWNS){
+      const dx = x - s[0], dz = z - s[1];
+      if(dx*dx + dz*dz < OBSTACLE_KEEP_SPAWN_R2) return false;
+    }
+    if(x*x + z*z < OBSTACLE_KEEP_CENTER_R2) return false;
+    for(const o of out){
+      const dx = x - o.x, dz = z - o.z, sep = r + o.r + OBSTACLE_MIN_GAP;
+      if(dx*dx + dz*dz < sep*sep) return false;
+    }
+    return true;
+  }
+
+  // Place one obstacle near (cx,cz): clamp inside arena, jitter on rejection.
+  function tryPlace(cx, cz, r){
+    let x = Math.max(-H, Math.min(H, cx));
+    let z = Math.max(-H, Math.min(H, cz));
+    for(let t = 0; t < OBSTACLE_MAX_TRIES; t++){
+      if(clearOf(x, z, r)){ out.push({ x, z, r }); return true; }
+      x = Math.max(-H, Math.min(H, x + (rng()*2 - 1) * 5));
+      z = Math.max(-H, Math.min(H, z + (rng()*2 - 1) * 5));
+    }
+    return false; // skipped after 200 tries
+  }
+
+  function scatter(n){
+    for(let i = 0; i < n; i++)
+      tryPlace((rng()*2 - 1) * H, (rng()*2 - 1) * H, rad());
+  }
+
+  switch(style){
+    case 0: { // scattered clusters: 2-3 blobs
+      const blobs = 2 + Math.floor(rng() * 2);
+      const centers = [];
+      for(let b = 0; b < blobs; b++)
+        centers.push([(rng()*2 - 1) * H * 0.6, (rng()*2 - 1) * H * 0.6]);
+      for(let i = 0; out.length < count && i < count * 3; i++){
+        const c = centers[i % blobs];
+        tryPlace(c[0] + (rng()*2 - 1) * 9, c[1] + (rng()*2 - 1) * 9, rad());
+      }
+      break;
+    }
+    case 1: { // pillar rows: two horizontal rows
+      const rows = [-9, 9];
+      const per = Math.ceil(count / rows.length);
+      for(const rz of rows){
+        for(let i = 0; i < per && out.length < count; i++){
+          const rx = -H + 4 + (i / Math.max(1, per - 1)) * (2*H - 8) + (rng()*2 - 1) * 2;
+          tryPlace(rx, rz + (rng()*2 - 1) * 2, rad());
+        }
+      }
+      break;
+    }
+    case 2: { // ring around center
+      const ringR = 13 + rng() * 3;
+      for(let i = 0; i < count && out.length < count; i++){
+        const a = (i / count) * Math.PI * 2 + rng() * 0.35;
+        tryPlace(Math.cos(a) * ringR, Math.sin(a) * ringR, rad());
+      }
+      break;
+    }
+    case 3: { // symmetric cross / plus (mirrored arms, gap at center)
+      const arms = Math.ceil(count / 4);
+      for(let i = 1; i <= arms && out.length < count; i++){
+        const d = 8 + (i - 1) * ((H - 10) / Math.max(1, arms - 1)) + (rng()*2 - 1);
+        tryPlace( d, 0, rad());
+        if(out.length >= count) break;
+        tryPlace(-d, 0, rad());
+        if(out.length >= count) break;
+        tryPlace(0,  d, rad());
+        if(out.length >= count) break;
+        tryPlace(0, -d, rad());
+      }
+      break;
+    }
+    default: { // dense random scatter
+      scatter(count);
+      break;
+    }
+  }
+  // Top-up: if a style under-filled under heavy rejection, fill the rest with scatter.
+  if(out.length < count) scatter(count - out.length);
+  return out;
+}
 function collideWorld(p, r){
   const H = CFG.arenaHalf - r;
   p.x = clamp(p.x, -H, H); p.z = clamp(p.z, -H, H);
@@ -1095,7 +1634,30 @@ function collideWorld(p, r){
   }
 }
 /* ================= PLAYER UPDATE ================= */
+function resolveSpawnFromObstacles(x, z, r){
+  // Kembalikan {x, z} yang sudah di-push keluar dari semua lingkaran obstacle.
+  // Memakai collideWorld (baca global `obstacles`) + clamp batas arena.
+  const p = { x: x, z: z };
+  collideWorld(p, r);
+  // Kasus degenerat: titik TEPAT di pusat obstacle (collideWorld skip d≈0
+  // untuk hindari bagi-nol) -> dorong keluar ke arah +x lalu clamp ulang.
+  for(const o of obstacles){
+    const dx = p.x - o.x, dz = p.z - o.z, rr = r + o.r;
+    if(dx*dx + dz*dz < rr*rr){
+      const a = Math.atan2(dz, dx); // (0,0) -> 0, deterministik
+      p.x = o.x + Math.cos(a)*rr;
+      p.z = o.z + Math.sin(a)*rr;
+      collideWorld(p, r);
+    }
+  }
+  return p;
+}
 function readLocalInput(p){
+  if(typeof TouchUI !== 'undefined' && TouchUI.active && TouchUI.visible){
+    return { ix: TouchUI.moveX, iz: TouchUI.moveZ,
+      ax: TouchUI.aimX || p.pos.x, az: TouchUI.aimZ || p.pos.z,
+      fire: !!TouchUI.firing, dash: !!TouchUI.dash };
+  }
   let ix = 0, iz = 0;
   if(keys['KeyW']||keys['ArrowUp']) iz += 1;
   if(keys['KeyS']||keys['ArrowDown']) iz -= 1;
@@ -1275,8 +1837,17 @@ function spawnEdgePos(){
   return [rand(-20,20), -24];
 }
 function startWave(n){
+TouchUI.setVisible(true);
   game.wave = n; game.state = 'playing';
   document.getElementById('wave-num').textContent = n >= CFG.maxWaves ? 'FINAL WAVE' : 'WAVE ' + n;
+  // Arena system (agent 05): theme + deterministic obstacle layout per wave
+  if(game.runSeed === undefined) game.runSeed = 0;
+  const ai = arenaForWave(game.wave);
+  applyArenaTheme(ai);
+  clearObstacleMeshes();
+  obstacles.length = 0;
+  obstacles.push(...genObstacleLayout(game.wave, ai, game.runSeed));
+  buildObstacleMeshes();
   if(isMP()){
     // respawn dead teammates at 50% HP, spread spawn positions
     const spots = [[0,8],[7,-5],[-7,-5],[0,-13]];
@@ -1294,10 +1865,11 @@ function startWave(n){
   } else {
     game.spawnQueue = waveComp(n);
     game.spawnT = 0.5;
-    showBanner('WAVE ' + n, n===1 ? 'selamat bertahan!' : '');
+    showBanner('WAVE ' + n, ARENAS[ai].name + (n===1 ? ' · selamat bertahan!' : ''));
     AudioSys.wave();
   }
 }
+
 function updateWaves(dt){
   if(game.spawnQueue.length > 0){
     game.spawnT -= dt;
@@ -1595,6 +2167,7 @@ function endStats(){
     `Part terkumpul: <b>${Object.keys(player.parts).length} jenis</b>`;
 }
 function showEndScreen(win, banked){
+TouchUI.setVisible(false);
   const end = document.getElementById('end');
   end.className = 'overlay ' + (win ? 'win' : 'lose');
   document.getElementById('end-title').textContent = win ? 'RUN SELESAI! 🏆' : 'TANK HANCUR';
@@ -1748,6 +2321,7 @@ function resetPlayerForRun(p, i){
 }
 function startMPGame(){
   AudioSys.init();
+  game.runSeed = (Math.random()*1e9)|0; // agent 05: deterministic obstacle layout seed
   players.forEach((p, i) => resetPlayerForRun(p, i));
   for(const e of enemies){ e.active = false; e.mesh.visible = false; }
   for(const k of pickups){ k.active = false; k.mesh.visible = false; }
@@ -1756,11 +2330,14 @@ function startMPGame(){
   document.getElementById('boss-bar-wrap').classList.add('hidden');
   document.getElementById('net').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
-  hostBroadcast({ t:'start', players: players.map(p => ({ id:p.netId, name:p.name, colorIdx:p.colorIdx })) });
+  hostBroadcast({ t:'start', runSeed: game.runSeed, players: players.map(p => ({ id:p.netId, name:p.name, colorIdx:p.colorIdx })) });
   startWave(1);
 }
 
+
 // ---------- GUEST ----------
+let lastSnapWave = -1; // agent 05: guest arena rebuild tracking
+
 function joinRoom(){
   if(typeof Peer === 'undefined'){ netStatus('Gagal memuat PeerJS — cek koneksi internet.'); return; }
   const name = (document.getElementById('net-name').value.trim() || 'Pemain').slice(0,12);
@@ -1815,6 +2392,9 @@ function onEventMsg(m){
   else if(m.k === 'started') netStatus('Game sudah mulai — tunggu run berikutnya.');
 }
 function guestStart(m){
+TouchUI.setVisible(true);
+  game.runSeed = m.runSeed; // agent 05: arena sync (set before first snapshot rebuild)
+
   AudioSys.init();
   for(const e of enemies){ e.active = false; e.mesh.visible = false; }
   for(const k of pickups){ k.active = false; k.mesh.visible = false; }
@@ -1834,6 +2414,17 @@ function guestStart(m){
 }
 function onSnapshot(m){
   game.wave = m.w; game.state = m.st;
+  // agent 05: rebuild arena theme + obstacles on wave change (guest side mirrors host)
+  if(m.w !== lastSnapWave){
+    lastSnapWave = m.w;
+    const gai = arenaForWave(m.w);
+    applyArenaTheme(gai);
+    clearObstacleMeshes();
+    obstacles.length = 0;
+    obstacles.push(...genObstacleLayout(m.w, gai, game.runSeed));
+    buildObstacleMeshes();
+  }
+
   document.getElementById('wave-num').textContent = m.w >= CFG.maxWaves ? 'FINAL WAVE' : 'WAVE ' + m.w;
   // players
   const seen = new Set();
@@ -2012,11 +2603,15 @@ function frame(now){
 }
 
 /* ================= BOOT ================= */
+initTouchUI();
+if(typeof initTouchAim === 'function') initTouchAim();
+if(typeof initTouchButtons === 'function') initTouchButtons();
 buildPlayer(player);
 recomputeStats(player);
 renderUpgrades();
 requestAnimationFrame(frame);
 document.getElementById('start-btn').onclick = () => {
+  game.runSeed = (Math.random()*1e9)|0; // agent 05: deterministic obstacle layout seed
   AudioSys.init();
   document.getElementById('menu').classList.add('hidden');
   document.getElementById('hud').classList.remove('hidden');
@@ -2024,7 +2619,7 @@ document.getElementById('start-btn').onclick = () => {
   player.hp = player.maxHp;
   startWave(1);
 };
-document.getElementById('restart-btn').onclick = () => location.reload();
+document.getElementById('restart-btn').onclick = () => { applyArenaTheme(0); clearObstacleMeshes(); obstacles.length = 0; location.reload(); };
 // multiplayer menu wiring
 document.getElementById('btn-multi').onclick = () => {
   document.getElementById('menu').classList.add('hidden');
@@ -2163,6 +2758,106 @@ function runSelfTest(){
   }, 30000);
 }
 if(new URLSearchParams(location.search).get('selftest')) setTimeout(runSelfTest, 1500);
+// Agent 10 — automated touch-input self-test. URL: ?touchtest=1
+// Mirrors runSelfTest reporting: green #touchtest box + document.title TOUCHTEST: PASS/FAIL.
+// No game run needed: dispatches synthetic TouchEvents on document and asserts
+// TouchUI state + readLocalInput output. Depends on patches 06 (TouchUI core +
+// left joystick listeners), 07 (right-half aim/fire listeners), 08 (#btn-dash).
+// Each step FAILs loudly if its dependency is missing.
+function runTouchTest(){
+  const out = [];
+  const el = document.createElement('div');
+  el.id = 'touchtest';
+  el.style.cssText = 'position:fixed;top:10px;left:10px;z-index:9999;background:#000;color:#0f0;padding:12px;font:14px monospace;white-space:pre;max-width:92vw;max-height:82vh;overflow:auto';
+  document.body.appendChild(el);
+  const render = () => {
+    el.textContent = out.join('\n') || '(running…)';
+    if(document.title !== 'TOUCHTEST: PASS' && document.title !== 'TOUCHTEST: FAIL')
+      document.title = out.some(l => l.startsWith('FAIL')) ? 'TOUCHTEST: FAIL' : 'TOUCHTEST: RUNNING';
+  };
+  const say = (ok, msg) => { out.push((ok ? 'PASS ' : 'FAIL ') + msg); render(); };
+  const finish = () => {
+    document.title = out.some(l => l.startsWith('FAIL')) ? 'TOUCHTEST: FAIL' : 'TOUCHTEST: PASS';
+    render();
+  };
+  render();
+  const W = window.innerWidth, H = window.innerHeight;
+  // Spec coordinates are (100,600) left / (700,400) right; clamp into the correct
+  // half so the test stays valid on viewports wider than 1400px (agent 07 uses
+  // clientX >= innerWidth/2 for the right-half aim zone).
+  const LX = Math.min(100, Math.floor(W / 2) - 50);
+  const LY = Math.min(600, H - 60);
+  const RX = Math.max(700, Math.ceil(W / 2) + 50);
+  const RY = Math.min(400, H - 60);
+  say(true, `viewport ${W}x${H}; left touch (${LX},${LY}), right touch (${RX},${RY})`);
+  if(typeof TouchUI === 'undefined'){ say(false, 'TouchUI undefined — touch patches (06/07/08) not integrated'); finish(); return; }
+  const prevActive = TouchUI.active, prevVisible = TouchUI.visible;
+  TouchUI.active = true;
+  TouchUI.visible = true;
+  if(typeof TouchUI.setVisible === 'function'){ try{ TouchUI.setVisible(true); }catch(e){} }
+
+  const mkTouch = (id, x, y) => new Touch({ identifier: id, target: document.body, clientX: x, clientY: y });
+  const fireTouch = (type, touches, target) => {
+    const ev = new TouchEvent(type, {
+      touches: type === 'touchend' ? [] : touches,
+      targetTouches: type === 'touchend' ? [] : touches,
+      changedTouches: touches,
+      bubbles: true, cancelable: true
+    });
+    (target || document).dispatchEvent(ev);
+  };
+  const step = (name, fn) => {
+    try{ fn(); }catch(e){ say(false, name + ': exception ' + ((e && e.message) || e)); }
+  };
+
+  // (a) left-half dynamic joystick: press, drag right, release
+  step('move', () => {
+    fireTouch('touchstart', [mkTouch(1, LX, LY)]);
+    fireTouch('touchmove', [mkTouch(1, LX + 60, LY)]);
+    say(TouchUI.moveX > 0.5, `joystick drag right -> moveX=${Number(TouchUI.moveX).toFixed(2)} (>0.5)`);
+    fireTouch('touchend', [mkTouch(1, LX + 60, LY)]);
+    say(TouchUI.moveX === 0 && TouchUI.moveZ === 0,
+      `joystick released -> moveX=${TouchUI.moveX}, moveZ=${TouchUI.moveZ} (both 0)`);
+  });
+
+  // (b) right-half touch: aim + auto-fire while held
+  step('fire', () => {
+    fireTouch('touchstart', [mkTouch(2, RX, RY)]);
+    say(TouchUI.firing === true, `right touch -> firing=${TouchUI.firing} (true)`);
+    fireTouch('touchend', [mkTouch(2, RX, RY)]);
+    say(TouchUI.firing === false, `right released -> firing=${TouchUI.firing} (false)`);
+  });
+
+  // (c) dash button
+  step('dash', () => {
+    const btn = document.getElementById('btn-dash');
+    if(!btn){ say(false, '#btn-dash not found — patch 08 (touch buttons) not integrated'); return; }
+    const r = btn.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    fireTouch('touchstart', [mkTouch(3, cx, cy)], btn);
+    say(TouchUI.dash === true, `dash press -> dash=${TouchUI.dash} (true)`);
+    fireTouch('touchend', [mkTouch(3, cx, cy)], btn);
+  });
+
+  // (d) readLocalInput integration: left drag held + right touch held (multi-touch)
+  step('input', () => {
+    fireTouch('touchstart', [mkTouch(4, LX, LY)]);
+    fireTouch('touchmove', [mkTouch(4, LX + 70, LY)]);
+    fireTouch('touchstart', [mkTouch(5, RX, RY)]);
+    const inp = readLocalInput(player);
+    say(inp.ix > 0.5, `readLocalInput ix=${Number(inp.ix).toFixed(2)} (>0.5)`);
+    say(inp.fire === true, `readLocalInput fire=${inp.fire} (true)`);
+    fireTouch('touchend', [mkTouch(5, RX, RY)]);
+    fireTouch('touchend', [mkTouch(4, LX + 70, LY)]);
+    say(TouchUI.firing === false && TouchUI.moveX === 0, 'touches released -> firing=false, moveX=0');
+  });
+
+  TouchUI.active = prevActive;
+  TouchUI.visible = prevVisible;
+  if(typeof TouchUI.setVisible === 'function'){ try{ TouchUI.setVisible(!!prevVisible); }catch(e){} }
+  finish();
+}
+if(new URLSearchParams(location.search).get('touchtest')) setTimeout(runTouchTest, 1500);
 </script>
 </body>
 </html>
